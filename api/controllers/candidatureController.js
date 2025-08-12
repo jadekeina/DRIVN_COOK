@@ -4,6 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const emailService = require('../services/email.Service');
+const crypto = require('crypto'); // AJOUTE EN HAUT DU FICHIER
+
 
 // Fonction pour normaliser le numéro de téléphone
 const normalizePhoneNumber = (phone) => {
@@ -284,7 +286,7 @@ const CandidatureController = {
                     });
                 }
 
-                // Mettre à jour le statut
+                // Mettre à jour le statut en BDD
                 Candidature.updateStatus(id, statut, notes_internes || '', async (err, result) => {
                     if (err) {
                         console.error('Erreur mise à jour statut:', err);
@@ -302,24 +304,53 @@ const CandidatureController = {
                     }
 
                     // ENVOI D'EMAIL AUTOMATIQUE selon le nouveau statut
+                    let emailSent = false;
                     try {
                         if (statut === 'acceptee') {
                             console.log('📧 Envoi email d\'acceptation à:', candidature.email);
-                            await emailService.sendAcceptanceEmail(candidature);
-                            console.log('✅ Email d\'acceptation envoyé');
+
+                            // Générer un token d'activation sécurisé
+                            const activationToken = crypto.randomBytes(32).toString('hex');
+                            console.log('🔑 Token généré:', activationToken);
+
+                            // Sauvegarder le token en BDD (expire dans 48h)
+                            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48h
+                            const db = require('../config/db');
+
+                            db.query(
+                                'INSERT INTO user_activations (candidature_id, token, email, expires_at) VALUES (?, ?, ?, ?)',
+                                [candidature.id, activationToken, candidature.email, expiresAt],
+                                (tokenErr) => {
+                                    if (tokenErr) {
+                                        console.error('Erreur sauvegarde token:', tokenErr);
+                                        // Continue quand même
+                                    }
+                                }
+                            );
+
+                            await emailService.sendAcceptanceEmail(candidature, activationToken);
+                            console.log('✅ Email d\'acceptation envoyé avec succès');
+                            emailSent = true;
+
                         } else if (statut === 'refusee') {
                             console.log('📧 Envoi email de refus à:', candidature.email);
                             await emailService.sendRejectionEmail(candidature);
-                            console.log('✅ Email de refus envoyé');
+                            console.log('✅ Email de refus envoyé avec succès');
+                            emailSent = true;
                         }
                     } catch (emailError) {
                         console.error('❌ Erreur envoi email:', emailError);
-                        // On continue même si l'email échoue
+                        // On continue même si l'email échoue, mais on le signale
                     }
 
                     res.json({
                         success: true,
-                        message: `Statut mis à jour avec succès${(statut === 'acceptee' || statut === 'refusee') ? ' et email envoyé' : ''}`
+                        message: `Statut mis à jour avec succès${emailSent ? ' et email envoyé automatiquement' : ''}`,
+                        data: {
+                            id: id,
+                            nouveauStatut: statut,
+                            emailEnvoye: emailSent
+                        }
                     });
                 });
             });

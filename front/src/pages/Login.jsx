@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { authService } from '../services/authService.ts';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -13,7 +14,7 @@ export default function LoginPage() {
         setIsLoading(true);
         setErrors({});
 
-        // Validation simple
+        // Validation simple (garde ton code existant)
         const newErrors = {};
         if (!email) newErrors.email = 'Email requis';
         if (!email.includes('@')) newErrors.email = 'Email invalide';
@@ -26,12 +27,36 @@ export default function LoginPage() {
             return;
         }
 
-        // Simulation d'une requête de connexion
-        setTimeout(() => {
+        // NOUVELLE PARTIE - Connexion à l'API
+        try {
+            const result = await authService.login(email, password);
+
+            if (result.success) {
+                // Redirection selon le rôle
+                const user = result.data?.user;
+                if (user?.role === 'admin') {
+                    window.location.href = '/admin'; // Ton interface admin
+                } else if (user?.role === 'franchise_owner') {
+                    window.location.href = '/franchise-dashboard'; // Interface franchisé
+                } else {
+                    window.location.href = '/dashboard'; // Interface client
+                }
+            } else {
+                setErrors({ general: result.message || 'Erreur de connexion' });
+            }
+        } catch (error) {
+            setErrors({ general: 'Erreur de connexion au serveur' });
+        } finally {
             setIsLoading(false);
-            alert('Connexion réussie ! (simulation)');
-        }, 1500);
+        }
     };
+
+// AJOUTE aussi ça après tes autres erreurs (dans le JSX) :
+    {errors.general && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-red-600 text-sm">{errors.general}</p>
+        </div>
+    )}
 
     return (
         <div className="min-h-screen bg-gray-50 flex">

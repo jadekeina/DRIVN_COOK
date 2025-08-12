@@ -129,6 +129,16 @@ try {
     console.error('Stack:', error.stack);
 }
 
+try {
+    console.log('Chargement des routes d\'activation...');
+    const activationRoutes = require('./routes/Auth/activation');
+    app.use('/api/activation', activationRoutes);
+    console.log('Routes d\'activation montées sur /api/activation');
+} catch (error) {
+    console.error('Erreur routes activation:', error.message);
+    console.error('Stack:', error.stack);
+}
+
 // Routes de test simple (fallback)
 app.get('/api/test-franchise', (req, res) => {
     res.json({
@@ -228,5 +238,7 @@ app.listen(PORT, () => {
     console.log('   GET /api/candidatures - Toutes candidatures (admin)');
     console.log('   GET /api/candidatures/stats - Stats candidatures (admin)');
 });
+
+
 
 module.exports = app;
