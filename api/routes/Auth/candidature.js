@@ -1,52 +1,58 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const CandidatureController = require('../../controllers/candidatureController');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
-const validators = require('../../middleware/validators');
+const CandidatureController = require("../../controllers/candidatureController");
+const { authenticateToken, requireRole } = require("../../middleware/auth");
+const validators = require("../../middleware/validators");
 
-console.log('📁 Chargement des routes candidatures...');
+console.log("📁 Chargement des routes candidatures...");
 
 // Route publique - Soumettre une candidature
-router.post('/',
-    CandidatureController.uploadFiles, // Middleware multer pour upload
-    validators.createCandidature,
-    CandidatureController.create
+router.post(
+  "/",
+  CandidatureController.uploadFiles, // Middleware multer pour upload
+  validators.createCandidature,
+  CandidatureController.create,
 );
 
 // Routes admin - Gestion des candidatures
-router.get('/',
+router.get(
+  "/",
 
-    CandidatureController.getAll
+  CandidatureController.getAll,
 );
 
-router.get('/stats',
+router.get(
+  "/stats",
 
-    CandidatureController.getStats
+  CandidatureController.getStats,
 );
 
-router.get('/:id',
+router.get(
+  "/:id",
 
-    CandidatureController.getById
+  CandidatureController.getById,
 );
 
-router.put('/:id/status',
+router.put(
+  "/:id/status",
 
-    CandidatureController.updateStatus
+  CandidatureController.updateStatus,
 );
 
 // Route pour télécharger un fichier (admin)
-router.get('/download/:candidatureId/:type',
-    authenticateToken,
-    requireRole(['admin']),
-    (req, res) => {
-        // Cette route sera implémentée pour télécharger les fichiers
-        res.json({
-            success: false,
-            message: 'Téléchargement de fichiers - À implémenter'
-        });
-    }
+router.get(
+  "/download/:candidatureId/:type",
+  authenticateToken,
+  requireRole(["admin"]),
+  (req, res) => {
+    // Cette route sera implémentée pour télécharger les fichiers
+    res.json({
+      success: false,
+      message: "Téléchargement de fichiers - À implémenter",
+    });
+  },
 );
 
-console.log('✅ Routes candidatures définies');
+console.log("✅ Routes candidatures définies");
 
 module.exports = router;
