@@ -1,14 +1,27 @@
 // models/candidature.js - CORRECT
-const db = require('../config/db');
+const db = require("../config/db");
 
 const Candidature = {
   // Créer une nouvelle candidature
   create: (candidatureData, callback) => {
     const {
-      prenom, nom, email, telephone, ville, zone,
-      experience_resto, commentaire_resto, ancien_franchise, commentaire_franchise,
-      capital, motivation, cv_filename, lettre_filename, carte_filename,
-      accept_terms, read_contract
+      prenom,
+      nom,
+      email,
+      telephone,
+      ville,
+      zone,
+      experience_resto,
+      commentaire_resto,
+      ancien_franchise,
+      commentaire_franchise,
+      capital,
+      motivation,
+      cv_filename,
+      lettre_filename,
+      carte_filename,
+      accept_terms,
+      read_contract,
     } = candidatureData;
 
     const query = `
@@ -20,12 +33,29 @@ const Candidature = {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_attente')
         `;
 
-    db.query(query, [
-      prenom, nom, email, telephone, ville, zone,
-      experience_resto, commentaire_resto, ancien_franchise, commentaire_franchise,
-      capital, motivation, cv_filename, lettre_filename, carte_filename,
-      accept_terms, read_contract
-    ], callback);
+    db.query(
+      query,
+      [
+        prenom,
+        nom,
+        email,
+        telephone,
+        ville,
+        zone,
+        experience_resto,
+        commentaire_resto,
+        ancien_franchise,
+        commentaire_franchise,
+        capital,
+        motivation,
+        cv_filename,
+        lettre_filename,
+        carte_filename,
+        accept_terms,
+        read_contract,
+      ],
+      callback,
+    );
   },
 
   // Obtenir toutes les candidatures
@@ -105,17 +135,17 @@ const Candidature = {
         en_cours: 0,
         acceptee: 0,
         refusee: 0,
-        total: 0
+        total: 0,
       };
 
-      results.forEach(row => {
+      results.forEach((row) => {
         stats[row.statut] = row.count;
         stats.total += row.count;
       });
 
       callback(null, stats);
     });
-  }
+  },
 };
 
 module.exports = Candidature;

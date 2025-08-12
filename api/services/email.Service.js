@@ -1,31 +1,32 @@
 // services/emailService.js
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 
 // Configuration du transporteur email
 const createTransport = () => {
-    return nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: process.env.MAIL_USER, // Ton email Gmail
-            pass: process.env.MAIL_PASS  // Mot de passe d'application Gmail
-        }
-    });
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.MAIL_USER, // Ton email Gmail
+      pass: process.env.MAIL_PASS, // Mot de passe d'application Gmail
+    },
+  });
 };
 
 const emailService = {
-    // Envoyer un email d'acceptation de candidature
-    sendAcceptanceEmail: async (candidature, activationToken) => {
-        try {
-            const transporter = createTransport(); // CORRIGÉ ICI
+  // Envoyer un email d'acceptation de candidature
+  sendAcceptanceEmail: async (candidature, activationToken) => {
+    try {
+      const transporter = createTransport(); // CORRIGÉ ICI
 
-            // URL de création de compte (tu changeras ça plus tard pour ton vrai domaine)
-            const activationUrl = `http://localhost:3000/activation/${activationToken}`;
+      // URL de création de compte (tu changeras ça plus tard pour ton vrai domaine)
+      const activationUrl = `http://localhost:3000/activation/${activationToken}`;
 
-            const mailOptions = {
-                from: process.env.MAIL_USER,
-                to: candidature.email,
-                subject: '🎉 Félicitations ! Votre candidature Driv\'n Cook a été acceptée',
-                html: `
+      const mailOptions = {
+        from: process.env.MAIL_USER,
+        to: candidature.email,
+        subject:
+          "🎉 Félicitations ! Votre candidature Driv'n Cook a été acceptée",
+        html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
                         <h1>🎉 Candidature Acceptée !</h1>
@@ -91,29 +92,28 @@ const emailService = {
                         © 2024 Driv'n Cook - Tous droits réservés
                     </div>
                 </div>
-            `
-            };
+            `,
+      };
 
-            const result = await transporter.sendMail(mailOptions);
-            console.log('Email d\'acceptation envoyé:', result.messageId);
-            return { success: true, messageId: result.messageId };
+      const result = await transporter.sendMail(mailOptions);
+      console.log("Email d'acceptation envoyé:", result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error("Erreur envoi email acceptation:", error);
+      throw error;
+    }
+  },
 
-        } catch (error) {
-            console.error('Erreur envoi email acceptation:', error);
-            throw error;
-        }
-    },
+  // Envoyer un email de refus de candidature
+  sendRejectionEmail: async (candidature) => {
+    try {
+      const transporter = createTransport();
 
-    // Envoyer un email de refus de candidature
-    sendRejectionEmail: async (candidature) => {
-        try {
-            const transporter = createTransport();
-
-            const mailOptions = {
-                from: process.env.MAIL_USER,
-                to: candidature.email,
-                subject: 'Réponse à votre candidature Driv\'n Cook',
-                html: `
+      const mailOptions = {
+        from: process.env.MAIL_USER,
+        to: candidature.email,
+        subject: "Réponse à votre candidature Driv'n Cook",
+        html: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                         <div style="background-color: #6c757d; color: white; padding: 20px; text-align: center;">
                             <h1>Réponse à votre candidature</h1>
@@ -154,31 +154,30 @@ const emailService = {
                             © 2024 Driv'n Cook - Tous droits réservés
                         </div>
                     </div>
-                `
-            };
+                `,
+      };
 
-            const result = await transporter.sendMail(mailOptions);
-            console.log('Email de refus envoyé:', result.messageId);
-            return { success: true, messageId: result.messageId };
-
-        } catch (error) {
-            console.error('Erreur envoi email refus:', error);
-            throw error;
-        }
-    },
-
-    // Test de connexion email
-    testConnection: async () => {
-        try {
-            const transporter = createTransport();
-            await transporter.verify();
-            console.log('✅ Connexion email OK');
-            return true;
-        } catch (error) {
-            console.error('❌ Erreur connexion email:', error);
-            return false;
-        }
+      const result = await transporter.sendMail(mailOptions);
+      console.log("Email de refus envoyé:", result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error("Erreur envoi email refus:", error);
+      throw error;
     }
+  },
+
+  // Test de connexion email
+  testConnection: async () => {
+    try {
+      const transporter = createTransport();
+      await transporter.verify();
+      console.log("✅ Connexion email OK");
+      return true;
+    } catch (error) {
+      console.error("❌ Erreur connexion email:", error);
+      return false;
+    }
+  },
 };
 
 module.exports = emailService;
