@@ -170,6 +170,17 @@ try {
   console.error("Stack:", error.stack);
 }
 
+// ROUTES DE GESTION DES FRANCHISES (NOUVEAU)
+try {
+  console.log('Chargement des routes de gestion des franchises...');
+  const franchiseManagementRoutes = require('./routes/Auth/franchiseManagement');
+  app.use('/api/admin', franchiseManagementRoutes);
+  console.log('Routes de gestion des franchises montées sur /api/admin');
+} catch (error) {
+  console.error('Erreur routes gestion franchises:', error.message);
+  console.error('Stack:', error.stack);
+}
+
 // Routes de test simple (fallback)
 app.get("/api/test-franchise", (req, res) => {
   res.json({

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import Candidatures from "./Candidature.tsx";
+
 
 interface Franchise {
   id: number;
