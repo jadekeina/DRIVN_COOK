@@ -15,9 +15,16 @@ import Franchises from "./pages/Franchises";
 import Profile from "./pages/Profile";
 import Login from "./pages/auth/Login";
 
-// Nouveaux composants qu'on a créés
-import FranchiseesManagement from "./pages/FranchiseesManagement";  // Gestion franchisés avec API
-import Camions from "./pages/Camions";  // Gestion camions
+// Nouveau module Gestion Financière
+import GestionFinanciere from "./pages/GestionFinanciere";
+import GestionStocks  from "./pages/GestionStocks.tsx";
+import ObligationsMensuelles from "./pages/ObligationsMensuelles.tsx";
+import SuivieCommandes from "./pages/SuivieCommandes.tsx";
+
+
+// Autres composants existants
+import FranchiseesManagement from "./pages/FranchiseesManagement";
+import Camions from "./pages/Camions";
 
 interface User {
   id: number;
@@ -131,14 +138,17 @@ function App() {
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/candidatures" element={<Candidatures />} />
+                <Route path="/franchises" element={<Franchises />} />
 
-                {/* Routes franchises - les deux versions */}
-                <Route path="/franchises" element={<Franchises />} />  {/* Ta version existante */}
-                <Route path="/franchisees" element={<FranchiseesManagement />} />  {/* Nouvelle version avec API */}
 
-                {/* Route camions */}
+                <Route path="/gestion-financiere" element={<GestionFinanciere />} />
+                <Route path="/commandes/stocks" element={<GestionStocks />} />
+                <Route path="/commandes/suivi" element={<SuivieCommandes />} />
+                <Route path="/commandes/obligations" element={<ObligationsMensuelles />} />
+
+
                 <Route path="/camions" element={<Camions />} />
-
+                <Route path="/franchisees" element={<FranchiseesManagement />} />
                 <Route path="/profile" element={<Profile />} />
 
                 {/* Route 404 */}
