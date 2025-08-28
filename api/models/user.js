@@ -36,7 +36,7 @@ const User = {
   // Trouver un utilisateur par ID
   findById: (id, callback) => {
     db.query(
-      "SELECT id, email, first_name, last_name, role, phone, is_verified, created_at FROM users WHERE id = ?",
+      "SELECT id, email, first_name, last_name, role, phone, is_verified, created_at,payment_status, assigned_zone, contract_signed_at, deposit_paid_at,franchise_payment_completed_at, franchise_payment_method FROM users WHERE id = ?",
       [id],
       (err, results) => {
         if (err) return callback(err);
@@ -44,6 +44,7 @@ const User = {
       },
     );
   },
+
 
   // Vérifier le mot de passe
   verifyPassword: (plainPassword, hashedPassword, callback) => {

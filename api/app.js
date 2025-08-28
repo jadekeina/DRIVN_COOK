@@ -235,17 +235,33 @@ try {
 
 try {
   console.log('Chargement des routes commande et stock...');
-  const stockRoutes = require('./routes/Commande/stockRoutes');
-  const commandeRoutes = require('./routes/Commande/commandeRoutes');
 
-  app.use('/api/stocks', stockRoutes);
+  // Chargement des routes commandes
+  const commandeRoutes = require('./routes/Commande/commandeRoutes');
   app.use('/api/commandes', commandeRoutes);
+  console.log('Routes commandes montées sur /api/commandes');
+
+  // Chargement des routes stocks
+  const stockRoutes = require('./routes/Commande/stockRoutes');
+  app.use('/api/stocks', stockRoutes);
+  console.log('Routes stocks montées sur /api/stocks');
+
   console.log('Routes commande et stock montées avec succès');
 } catch (error) {
   console.error('Erreur routes commande/stock:', error.message);
   console.error('Stack:', error.stack);
 }
 
+
+// Dans app.js, après les autres routes franchise
+try {
+  console.log('Chargement des routes d\'activation contrat...');
+  const contractActivationRoutes = require('./routes/franchise/contractActivation');
+  app.use('/api/franchise', contractActivationRoutes);
+  console.log('Routes d\'activation contrat montées sur /api/franchise');
+} catch (error) {
+  console.error('Erreur routes activation contrat:', error.message);
+}
 
 // Ajoutez cette route pour tester que tout fonctionne :
 app.get('/api/test-commande-stock', (req, res) => {
@@ -350,6 +366,9 @@ app.use((err, req, res, next) => {
         : "Une erreur s'est produite",
   });
 });
+
+// Dans votre app.js ou server.js
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // AJOUTEZ CES ROUTES DE DIAGNOSTIC DANS VOTRE APP.JS
 // Cela va nous dire exactement où est le problème

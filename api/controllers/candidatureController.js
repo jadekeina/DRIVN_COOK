@@ -416,6 +416,124 @@ const CandidatureController = {
       });
     }
   },
+
+  // À ajouter dans votre candidatureController.js
+
+// Fonction pour télécharger un fichier
+// À ajouter dans candidatureController.js
+  downloadFile: (req, res) => {
+    try {
+      const { candidatureId, type } = req.params;
+
+      console.log(`Demande de téléchargement - Candidature: ${candidatureId}, Type: ${type}`);
+
+      if (!candidatureId || isNaN(candidatureId)) {
+        return res.status(400).json({
+          success: false,
+          message: "ID de candidature invalide"
+        });
+      }
+
+      const allowedTypes = ['cv', 'lettre', 'carte'];
+      if (!allowedTypes.includes(type)) {
+        return res.status(400).json({
+          success: false,
+          message: "Type de fichier non autorisé"
+        });
+      }
+
+      // Récupérer la candidature pour obtenir le nom du fichier
+      const Candidature = require("../models/candidature");
+      Candidature.findById(candidatureId, (err, candidature) => {
+        if (err) {
+          console.error("Erreur recherche candidature pour téléchargement:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Erreur serveur"
+          });
+        }
+
+        if (!candidature) {
+          return res.status(404).json({
+            success: false,
+            message: "Candidature non trouvée"
+          });
+        }
+
+        // Obtenir le nom du fichier selon le type
+        let filename;
+        switch (type) {
+          case 'cv':
+            filename = candidature.cv_filename;
+            break;
+          case 'lettre':
+            filename = candidature.lettre_filename;
+            break;
+          case 'carte':
+            filename = candidature.carte_filename;
+            break;
+          default:
+            return res.status(400).json({
+              success: false,
+              message: "Type de fichier invalide"
+            });
+        }
+
+        if (!filename) {
+          return res.status(404).json({
+            success: false,
+            message: "Fichier non trouvé"
+          });
+        }
+
+        // Construire le chemin complet vers le fichier
+        const path = require("path");
+        const fs = require("fs");
+        const filePath = path.join(__dirname, '../uploads/candidatures/', filename);
+
+        console.log(`Chemin du fichier: ${filePath}`);
+
+        // Vérifier que le fichier existe
+        if (!fs.existsSync(filePath)) {
+          console.error(`Fichier non trouvé: ${filePath}`);
+          return res.status(404).json({
+            success: false,
+            message: "Fichier non trouvé sur le serveur"
+          });
+        }
+
+        try {
+          // Envoyer le fichier
+          res.download(filePath, filename, (err) => {
+            if (err) {
+              console.error("Erreur lors du téléchargement:", err);
+              if (!res.headersSent) {
+                res.status(500).json({
+                  success: false,
+                  message: "Erreur lors du téléchargement"
+                });
+              }
+            } else {
+              console.log(`Fichier téléchargé avec succès: ${filename}`);
+            }
+          });
+        } catch (downloadError) {
+          console.error("Erreur téléchargement:", downloadError);
+          res.status(500).json({
+            success: false,
+            message: "Erreur lors du téléchargement"
+          });
+        }
+      });
+
+    } catch (error) {
+      console.error("Erreur dans downloadFile:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur interne du serveur"
+      });
+    }
+  },
 };
 
 module.exports = CandidatureController;

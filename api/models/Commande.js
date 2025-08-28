@@ -87,7 +87,7 @@ const Commande = {
             SELECT
                 id,
                 CONCAT('ART-', LPAD(id, 3, '0')) as id_article,
-                nom,
+                nom, 
                 description,
                 prix_unitaire,
                 unite,
@@ -357,7 +357,161 @@ const Commande = {
             'annulee': 'annulee'
         };
         return mapping[statutReact] || 'en_attente';
-    }
+    },
+
+    // Ajoutez ces méthodes à votre fichier models/Commande.js
+
+    /**
+     * Mettre à jour un produit existant
+     */
+    updateProduit: (id, produitData, callback) => {
+        const query = `
+        UPDATE produits 
+        SET nom = ?, description = ?, prix_unitaire = ?, 
+            unite = ?, categorie = ?, est_obligatoire = ?, 
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND est_actif = 1
+    `;
+
+        db.query(query, [
+            produitData.nom,
+            produitData.description || '',
+            produitData.prix_unitaire,
+            produitData.unite || 'piece',
+            produitData.categorie || 'autre',
+            produitData.est_obligatoire || false,
+            id
+        ], (err, result) => {
+            if (err) return callback(err);
+
+            if (result.affectedRows === 0) {
+                return callback(new Error('Produit non trouvé'));
+            }
+
+            // Retourner le produit mis à jour
+            Commande.getProduitById(id, callback);
+        });
+    },
+
+    /**
+     * Supprimer un produit (soft delete)
+     */
+    deleteProduit: (id, callback) => {
+        const query = `
+        UPDATE produits 
+        SET est_actif = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND est_actif = 1
+    `;
+
+        db.query(query, [id], (err, result) => {
+            if (err) return callback(err);
+
+            if (result.affectedRows === 0) {
+                return callback(new Error('Produit non trouvé'));
+            }
+
+            callback(null, {
+                id: id,
+                message: 'Produit désactivé avec succès',
+                affectedRows: result.affectedRows
+            });
+        });
+    },
+
+    /**
+     * Ajouter un mouvement de stock
+     * Note: Cette méthode nécessite une table mouvements_stock
+     */
+    addMouvementStock: (mouvementData, callback) => {
+        // Pour l'instant, on simule car la table n'existe pas encore
+        // Vous pouvez créer la table avec cette structure :
+        /*
+        CREATE TABLE mouvements_stock (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            produit_id INT NOT NULL,
+            type ENUM('entree', 'sortie') NOT NULL,
+            quantite INT NOT NULL,
+            motif VARCHAR(255) NOT NULL,
+            utilisateur_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (produit_id) REFERENCES produits(id)
+        );
+        */
+
+        const nouveauMouvement = {
+            id: Date.now(), // ID temporaire
+            produit_id: mouvementData.article_id,
+            type: mouvementData.type,
+            quantite: mouvementData.quantite,
+            motif: mouvementData.motif,
+            date: new Date().toISOString(),
+            utilisateur: 'Admin' // À remplacer par l'utilisateur connecté
+        };
+
+        // Simulation de l'insertion
+        console.log('[STOCK] Simulation ajout mouvement:', nouveauMouvement);
+
+        callback(null, nouveauMouvement);
+    },
+
+    /**
+     * Récupérer l'historique des mouvements
+     */
+    getMouvementsStock: (options = {}, callback) => {
+        const { limit = 50, offset = 0, produit_id } = options;
+
+        // Données de test en attendant la vraie table
+        const mouvementsTest = [
+            {
+                id: 1,
+                produit_id: 1,
+                article_nom: "Pain de mie complet",
+                type: "entree",
+                quantite: 50,
+                motif: "Livraison fournisseur",
+                date: new Date(Date.now() - 86400000).toISOString(), // Hier
+                utilisateur: "Admin"
+            },
+            {
+                id: 2,
+                produit_id: 2,
+                article_nom: "Farine T65",
+                type: "sortie",
+                quantite: 20,
+                motif: "Commande Franchise Paris",
+                date: new Date(Date.now() - 172800000).toISOString(), // Avant-hier
+                utilisateur: "Admin"
+            },
+            {
+                id: 3,
+                produit_id: 1,
+                article_nom: "Pain de mie complet",
+                type: "sortie",
+                quantite: 5,
+                motif: "Vente directe",
+                date: new Date(Date.now() - 259200000).toISOString(), // Il y a 3 jours
+                utilisateur: "Caissier"
+            }
+        ];
+
+        // Filtrer par produit_id si spécifié
+        let mouvementsFiltres = mouvementsTest;
+        if (produit_id) {
+            mouvementsFiltres = mouvementsTest.filter(m => m.produit_id === parseInt(produit_id));
+        }
+
+        // Appliquer limite et offset
+        const startIndex = parseInt(offset);
+        const endIndex = startIndex + parseInt(limit);
+        const mouvementsPagines = mouvementsFiltres.slice(startIndex, endIndex);
+
+        callback(null, {
+            mouvements: mouvementsPagines,
+            total: mouvementsFiltres.length,
+            page: Math.floor(offset / limit) + 1,
+            pages: Math.ceil(mouvementsFiltres.length / limit)
+        });
+    },
 };
 
 module.exports = Commande;

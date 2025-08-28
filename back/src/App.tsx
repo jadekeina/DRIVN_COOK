@@ -14,6 +14,7 @@ import Candidatures from "./pages/Candidature";
 import Franchises from "./pages/Franchises";
 import Profile from "./pages/Profile";
 import Login from "./pages/auth/Login";
+import CandidatureDetails from "./pages/CandidatureDetails.tsx";
 
 // Nouveau module Gestion Financière
 import GestionFinanciere from "./pages/GestionFinanciere";
@@ -138,6 +139,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/candidatures" element={<Candidatures />} />
+                <Route path="/candidatures/:id" element={<CandidatureDetails />} />
                 <Route path="/franchises" element={<Franchises />} />
 
 

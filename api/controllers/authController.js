@@ -191,6 +191,12 @@ const AuthController = {
               phone: user.phone,
               is_verified: user.is_verified,
               created_at: user.created_at,
+              payment_status: user.payment_status || 'pending_contract',
+              assigned_zone: user.assigned_zone,
+              contract_signed_at: user.contract_signed_at,
+              deposit_paid_at: user.deposit_paid_at,
+              franchise_payment_completed_at: user.franchise_payment_completed_at,
+              franchise_payment_method: user.franchise_payment_method
             },
           },
         });
