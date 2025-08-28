@@ -39,18 +39,12 @@ router.put(
   CandidatureController.updateStatus,
 );
 
-// Route pour télécharger un fichier (admin)
+
 router.get(
-  "/download/:candidatureId/:type",
-  authenticateToken,
-  requireRole(["admin"]),
-  (req, res) => {
-    // Cette route sera implémentée pour télécharger les fichiers
-    res.json({
-      success: false,
-      message: "Téléchargement de fichiers - À implémenter",
-    });
-  },
+    "/download/:candidatureId/:type",
+    // authenticateToken,
+    // requireRole(["admin"]), // Décommentez ces lignes si vous voulez une authentification
+    CandidatureController.downloadFile,
 );
 
 console.log("✅ Routes candidatures définies");

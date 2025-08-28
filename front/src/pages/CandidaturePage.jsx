@@ -315,7 +315,7 @@ const CandidaturePage = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Ville ou département souhaité *
+                    Ville  ou vous logez *
                   </label>
                   <input
                     name="ville"
@@ -330,7 +330,7 @@ const CandidaturePage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Zone préférée *
+                    Zone Franchise voulue *
                   </label>
                   <select
                     name="zone"
@@ -399,28 +399,10 @@ const CandidaturePage = () => {
                 </div>
               </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Capital disponible *
-                </label>
-                <select
-                  name="capital"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
-                  value={formData.capital}
-                  onChange={handleChange}
-                  required
-                >
-                  <option value="">
-                    Disposez-vous d'un capital de 50 000€ ?
-                  </option>
-                  <option value="oui">Oui, je dispose du capital requis</option>
-                  <option value="non">Non, j'ai besoin d'un financement</option>
-                </select>
-              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Votre motivation *
+                  Votre motivation
                 </label>
                 <textarea
                   name="motivation"
@@ -429,7 +411,7 @@ const CandidaturePage = () => {
                   placeholder="Expliquez-nous pourquoi vous souhaitez rejoindre Driv'n Cook et ce qui vous motive dans ce projet... (minimum 50 caractères)"
                   value={formData.motivation}
                   onChange={handleChange}
-                  required
+
                 />
                 <p className="mt-1 text-sm text-gray-500">
                   {formData.motivation.length}/2000 caractères
