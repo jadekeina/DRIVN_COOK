@@ -7,6 +7,9 @@ import FranchiseDashboard from "./pages/FranchiseDashboard";
 import MesCommandes from "./pages/MesCommandes";
 import MesVentes from "./pages/MesVentes";
 import FranchisePayment from './pages/FranchisePaiement';
+import ContractPage from './pages/ContractPage';
+import PaymentSuccessPage from './pages/PaymentSuccessPage';
+
 
 function App() {
   return (
@@ -20,6 +23,8 @@ function App() {
         <Route path="/mes-commandes" element={<MesCommandes />} />
         <Route path="/mes-ventes" element={<MesVentes />} />
         <Route path="/franchise/paiement/:token" element={<FranchisePayment />} />
+        <Route path="/contract/:token" element={<ContractPage />} />
+        <Route path="/payment-success" element={<PaymentSuccessPage />} />
 
       </Routes>
     </Router>

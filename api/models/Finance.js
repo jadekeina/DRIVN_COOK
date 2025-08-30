@@ -2,9 +2,10 @@ const db = require("../config/db");
 
 const Finance = {
     /**
-     * Récupérer toutes les données financières des franchisés (vue d'ensemble)
+     * Récupérer tous les utilisateurs avec leur statut de paiement
+     * Focus sur les nouveaux franchisés qui ont payé les 50k
      */
-    getAllFranchisesFinance: (callback) => {
+    getAllFranchisesFinance: async (callback) => {
         const query = `
             SELECT 
                 u.id,
@@ -12,51 +13,48 @@ const Finance = {
                 u.last_name,
                 CONCAT(u.first_name, ' ', u.last_name) as franchisee_name,
                 u.email,
-                u.zone_attribution,
+                u.zone_attribution as assigned_zone,
                 u.phone,
-                u.date_franchise as date_creation,
-                u.droit_entree_paye,
-                u.pourcentage_ca,
+                u.created_at as date_creation,
+                u.payment_status,
+                u.contract_signed_at,
+                u.deposit_paid_at,
+                u.franchise_payment_completed_at,
+                u.franchise_payment_method,
+                u.assigned_zone,
                 
-                -- Calcul du CA total depuis les ventes
-                COALESCE(SUM(v.chiffre_affaires), 0) as ca_total,
+                -- Vérifier si une franchise existe déjà
+                f.id as franchise_id,
+                f.name as franchise_name,
+                f.is_active as franchise_active,
                 
-                -- Calcul des redevances dues (CA * pourcentage)
-                COALESCE(SUM(v.chiffre_affaires) * (u.pourcentage_ca / 100), 0) as redevances_dues,
-                
-                -- Nombre de commandes ce mois-ci
-                COUNT(DISTINCT CASE 
-                    WHEN MONTH(c.date_commande) = MONTH(CURRENT_DATE()) 
-                    AND YEAR(c.date_commande) = YEAR(CURRENT_DATE()) 
-                    THEN c.id 
-                END) as commandes_mois,
-                
-                -- Statut global calculé
+                -- Statut calculé basé sur le paiement et l'assignation
                 CASE 
-                    WHEN u.droit_entree_paye = FALSE THEN 'en_attente'
-                    WHEN COALESCE(SUM(v.chiffre_affaires), 0) = 0 THEN 'en_attente'
-                    WHEN DATE_ADD(MAX(v.date_vente), INTERVAL 30 DAY) < CURRENT_DATE() THEN 'en_retard'
-                    ELSE 'a_jour'
+                    WHEN u.payment_status = 'franchise_payment_completed' AND f.id IS NOT NULL THEN 'franchise_assignee'
+                    WHEN u.payment_status = 'franchise_payment_completed' AND f.id IS NULL THEN 'paiement_complete_non_assigne'
+                    WHEN u.payment_status = 'contract_signed' THEN 'contrat_signe_attente_paiement'
+                    ELSE 'en_attente'
                 END as statut_global
                 
             FROM users u
-            LEFT JOIN ventes v ON u.id = v.franchisee_id
-            LEFT JOIN commandes c ON u.id = c.franchisee_id
+            LEFT JOIN franchises f ON u.id = f.owner_id
             WHERE u.role = 'franchise_owner'
-            GROUP BY u.id, u.first_name, u.last_name, u.email, u.zone_attribution, 
-                     u.phone, u.date_franchise, u.droit_entree_paye, u.pourcentage_ca
-            ORDER BY u.date_franchise DESC
+            ORDER BY u.franchise_payment_completed_at DESC, u.created_at DESC
         `;
 
-        db.query(query, callback);
+        try {
+            const [results] = await db.execute(query);
+            callback(null, results);
+        } catch (err) {
+            callback(err);
+        }
     },
 
     /**
-     * Récupérer les détails financiers d'un franchisé spécifique
+     * Récupérer les détails d'un franchisé avec ses informations de paiement et franchise
      */
-    getFranchiseDetail: (franchiseId, callback) => {
-        // Informations de base du franchisé
-        const franchiseQuery = `
+    getFranchiseDetail: async (franchiseId, callback) => {
+        const query = `
             SELECT 
                 u.id,
                 u.first_name,
@@ -65,201 +63,195 @@ const Finance = {
                 u.email,
                 u.zone_attribution,
                 u.phone,
-                u.date_franchise as date_creation,
-                u.droit_entree_paye,
-                u.pourcentage_ca
+                u.created_at as date_creation,
+                u.payment_status,
+                u.contract_signed_at,
+                u.deposit_paid_at,
+                u.franchise_payment_completed_at,
+                u.franchise_payment_method,
+                u.assigned_zone,
+                
+                -- Informations franchise si elle existe
+                f.id as franchise_id,
+                f.name as franchise_name,
+                f.address as franchise_address,
+                f.city as franchise_city,
+                f.postal_code as franchise_postal_code,
+                f.is_active as franchise_active,
+                f.created_at as franchise_created_at
+                
             FROM users u
+            LEFT JOIN franchises f ON u.id = f.owner_id
             WHERE u.id = ? AND u.role = 'franchise_owner'
         `;
 
-        db.query(franchiseQuery, [franchiseId], (err, franchiseResults) => {
-            if (err) return callback(err);
+        try {
+            const [results] = await db.execute(query, [franchiseId]);
 
-            if (franchiseResults.length === 0) {
-                return callback(null, null); // Franchisé non trouvé
-            }
-
-            const franchise = franchiseResults[0];
-
-            // Récupérer les ventes par mois pour calculer les redevances
-            const ventesQuery = `
-                SELECT 
-                    DATE_FORMAT(date_vente, '%Y-%m') as mois,
-                    SUM(chiffre_affaires) as ca_declare,
-                    SUM(chiffre_affaires) * (? / 100) as redevance_calculee,
-                    'paye' as statut,
-                    MIN(date_vente) as date_declaration
-                FROM ventes
-                WHERE franchisee_id = ?
-                GROUP BY DATE_FORMAT(date_vente, '%Y-%m')
-                ORDER BY mois DESC
-                LIMIT 12
-            `;
-
-            db.query(ventesQuery, [franchise.pourcentage_ca, franchiseId], (ventesErr, ventesResults) => {
-                if (ventesErr) return callback(ventesErr);
-
-                // Récupérer l'historique des commandes
-                const commandesQuery = `
-                    SELECT 
-                        c.id,
-                        c.date_commande as date,
-                        c.total_ttc as montant,
-                        c.statut,
-                        COUNT(cd.id) as articles_count
-                    FROM commandes c
-                    LEFT JOIN commandes_detail cd ON c.id = cd.commande_id
-                    WHERE c.franchisee_id = ?
-                    GROUP BY c.id, c.date_commande, c.total_ttc, c.statut
-                    ORDER BY c.date_commande DESC
-                    LIMIT 50
-                `;
-
-                db.query(commandesQuery, [franchiseId], (cmdErr, commandesResults) => {
-                    if (cmdErr) return callback(cmdErr);
-
-                    // Retourner toutes les données combinées
-                    callback(null, {
-                        franchise: franchise,
-                        ventes: ventesResults || [],
-                        commandes: commandesResults || []
-                    });
-                });
-            });
-        });
-    },
-
-    /**
-     * Générer un rapport financier pour un franchisé
-     */
-    generateFinanceReport: (franchiseId, callback) => {
-        // Récupérer les informations du franchisé
-        const franchiseQuery = `
-            SELECT 
-                u.id,
-                u.first_name,
-                u.last_name,
-                u.email,
-                u.zone_attribution,
-                u.pourcentage_ca,
-                u.date_franchise
-            FROM users u
-            WHERE u.id = ? AND u.role = 'franchise_owner'
-        `;
-
-        db.query(franchiseQuery, [franchiseId], (err, franchiseResults) => {
-            if (err) return callback(err);
-
-            if (franchiseResults.length === 0) {
+            if (results.length === 0) {
                 return callback(null, null);
             }
 
-            const franchise = franchiseResults[0];
+            const userData = results[0];
 
-            // Calculs financiers détaillés
-            const ventesQuery = `
-                SELECT 
-                    SUM(chiffre_affaires) as ca_total,
-                    COUNT(*) as nombre_ventes,
-                    AVG(chiffre_affaires) as ca_moyen_par_jour,
-                    MIN(date_vente) as premiere_vente,
-                    MAX(date_vente) as derniere_vente
-                FROM ventes
-                WHERE franchisee_id = ?
-            `;
+            // Structure de réponse simplifiée
+            const detailResponse = {
+                id: userData.id,
+                franchisee_name: userData.franchisee_name,
+                email: userData.email,
+                phone: userData.phone,
+                assigned_zone: userData.assigned_zone,
+                date_creation: userData.date_creation,
 
-            db.query(ventesQuery, [franchiseId], (ventesErr, ventesResults) => {
-                if (ventesErr) return callback(ventesErr);
+                // Statut de paiement
+                paiement: {
+                    statut: userData.payment_status,
+                    contrat_signe: userData.contract_signed_at,
+                    paiement_complete: userData.franchise_payment_completed_at,
+                    methode_paiement: userData.franchise_payment_method,
+                    montant_paye: userData.payment_status === 'franchise_payment_completed' ? 50000 : 0
+                },
 
-                const commandesQuery = `
-                    SELECT 
-                        SUM(total_ttc) as total_commandes,
-                        COUNT(*) as nombre_commandes,
-                        AVG(total_ttc) as panier_moyen
-                    FROM commandes
-                    WHERE franchisee_id = ? AND statut != 'annulee'
-                `;
+                // Informations franchise
+                franchise: userData.franchise_id ? {
+                    id: userData.franchise_id,
+                    nom: userData.franchise_name,
+                    adresse: userData.franchise_address,
+                    ville: userData.franchise_city,
+                    code_postal: userData.franchise_postal_code,
+                    active: userData.franchise_active,
+                    date_creation: userData.franchise_created_at
+                } : null
+            };
 
-                db.query(commandesQuery, [franchiseId], (cmdErr, commandesResults) => {
-                    if (cmdErr) return callback(cmdErr);
-
-                    callback(null, {
-                        franchise: franchise,
-                        ventes: ventesResults[0] || {},
-                        commandes: commandesResults[0] || {}
-                    });
-                });
-            });
-        });
+            callback(null, { franchise: detailResponse });
+        } catch (err) {
+            callback(err);
+        }
     },
 
     /**
-     * Mettre à jour le statut de paiement des droits d'entrée
+     * Créer une franchise pour un utilisateur qui a payé
      */
-    updateDroitEntreePaiement: (franchiseId, paye, callback) => {
+    createFranchiseForUser: async (userId, franchiseData, callback) => {
+        try {
+            // Vérifier que l'utilisateur a bien payé et n'a pas déjà de franchise
+            const checkQuery = `
+                SELECT u.id, u.payment_status, f.id as franchise_exists
+                FROM users u 
+                LEFT JOIN franchises f ON u.id = f.owner_id
+                WHERE u.id = ? AND u.role = 'franchise_owner'
+            `;
+
+            const [userCheck] = await db.execute(checkQuery, [userId]);
+
+            if (userCheck.length === 0) {
+                return callback(new Error('Utilisateur non trouvé'));
+            }
+
+            if (userCheck[0].payment_status !== 'franchise_payment_completed') {
+                return callback(new Error('L\'utilisateur n\'a pas encore payé les droits de franchise'));
+            }
+
+            if (userCheck[0].franchise_exists) {
+                return callback(new Error('Une franchise existe déjà pour cet utilisateur'));
+            }
+
+            // Créer la franchise
+            const insertQuery = `
+                INSERT INTO franchises (name, email, phone, owner_id, address, city, postal_code, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())
+            `;
+
+            const [result] = await db.execute(insertQuery, [
+                franchiseData.name,
+                franchiseData.email,
+                franchiseData.phone,
+                userId,
+                franchiseData.address,
+                franchiseData.city,
+                franchiseData.postal_code
+            ]);
+
+            callback(null, { insertId: result.insertId });
+        } catch (err) {
+            callback(err);
+        }
+    },
+
+    /**
+     * Mettre à jour les informations d'assignation de zone
+     */
+    updateZoneAssignment: async (userId, zoneData, callback) => {
         const query = `
             UPDATE users 
-            SET droit_entree_paye = ?, updated_at = CURRENT_TIMESTAMP 
+            SET assigned_zone = ?, updated_at = NOW()
             WHERE id = ? AND role = 'franchise_owner'
         `;
 
-        db.query(query, [paye, franchiseId], callback);
+        try {
+            const [result] = await db.execute(query, [zoneData.zone, userId]);
+            callback(null, result);
+        } catch (err) {
+            callback(err);
+        }
     },
 
     /**
-     * Récupérer les statistiques globales financières
+     * Statistiques globales simplifiées
      */
-    getGlobalFinanceStats: (callback) => {
+    getGlobalFinanceStats: async (callback) => {
         const query = `
             SELECT 
                 -- Nombre total de franchisés
                 COUNT(DISTINCT u.id) as total_franchises,
                 
-                -- Franchisés ayant payé leurs droits d'entrée
-                COUNT(DISTINCT CASE WHEN u.droit_entree_paye = TRUE THEN u.id END) as franchises_droits_payes,
+                -- Franchisés ayant payé leurs droits de franchise (50k)
+                COUNT(DISTINCT CASE WHEN u.payment_status = 'franchise_payment_completed' THEN u.id END) as franchises_payes,
                 
-                -- CA total du réseau
-                COALESCE(SUM(v.chiffre_affaires), 0) as ca_total_reseau,
+                -- Franchisés avec franchise assignée
+                COUNT(DISTINCT CASE WHEN f.id IS NOT NULL THEN u.id END) as franchises_assignees,
                 
-                -- Total des redevances dues
-                COALESCE(SUM(v.chiffre_affaires * (u.pourcentage_ca / 100)), 0) as redevances_totales,
+                -- Montant total collecté (50k par franchisé payé)
+                COUNT(DISTINCT CASE WHEN u.payment_status = 'franchise_payment_completed' THEN u.id END) * 50000 as montant_total_collecte,
                 
-                -- Total des commandes
-                COALESCE(SUM(c.total_ttc), 0) as commandes_totales,
-                
-                -- Nombre de commandes ce mois
+                -- Nouveaux paiements ce mois
                 COUNT(DISTINCT CASE 
-                    WHEN MONTH(c.date_commande) = MONTH(CURRENT_DATE()) 
-                    AND YEAR(c.date_commande) = YEAR(CURRENT_DATE()) 
-                    THEN c.id 
-                END) as commandes_ce_mois
+                    WHEN u.payment_status = 'franchise_payment_completed' 
+                    AND MONTH(u.franchise_payment_completed_at) = MONTH(CURRENT_DATE())
+                    AND YEAR(u.franchise_payment_completed_at) = YEAR(CURRENT_DATE())
+                    THEN u.id 
+                END) as nouveaux_paiements_ce_mois
                 
             FROM users u
-            LEFT JOIN ventes v ON u.id = v.franchisee_id
-            LEFT JOIN commandes c ON u.id = c.franchisee_id
+            LEFT JOIN franchises f ON u.id = f.owner_id
             WHERE u.role = 'franchise_owner'
         `;
 
-        db.query(query, (err, results) => {
-            if (err) return callback(err);
+        try {
+            const [results] = await db.execute(query);
             callback(null, results[0]);
-        });
+        } catch (err) {
+            callback(err);
+        }
     },
 
     /**
-     * Vérifier qu'un franchisé existe
+     * Vérifier qu'un utilisateur existe et récupérer ses infos de base
      */
-    findById: (franchiseId, callback) => {
+    findById: async (userId, callback) => {
         const query = `
-            SELECT id, first_name, last_name, email 
+            SELECT id, first_name, last_name, email, payment_status, assigned_zone
             FROM users 
             WHERE id = ? AND role = 'franchise_owner'
         `;
 
-        db.query(query, [franchiseId], (err, results) => {
-            if (err) return callback(err);
+        try {
+            const [results] = await db.execute(query, [userId]);
             callback(null, results[0]);
-        });
+        } catch (err) {
+            callback(err);
+        }
     }
 };
 

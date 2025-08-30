@@ -149,9 +149,6 @@ const validators = {
       .withMessage(
         "Le commentaire sur l'expérience entrepreneuriale ne peut pas dépasser 1000 caractères",
       ),
-    body("capital")
-      .isIn(["oui", "non"])
-      .withMessage("Réponse invalide pour le capital"),
     body("motivation")
       .trim()
       .isLength({ min: 50, max: 2000 })
