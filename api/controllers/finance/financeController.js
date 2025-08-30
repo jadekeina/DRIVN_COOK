@@ -3,81 +3,81 @@ const Finance = require('../../models/Finance');
 const FinanceController = {
 
     /**
-     * Récupérer toutes les données financières des franchisés (vue d'ensemble)
+     * Récupérer tous les utilisateurs avec leur statut de paiement et franchise
      */
     getAllFranchisesFinance: (req, res) => {
-        console.log('Récupération des données financières de tous les franchisés...');
+        console.log('Récupération des franchisés avec statuts de paiement...');
 
-        Finance.getAllFranchisesFinance((err, franchises) => {
+        Finance.getAllFranchisesFinance((err, users) => {
             if (err) {
                 console.error('Erreur getAllFranchisesFinance:', err);
                 return res.status(500).json({
                     success: false,
-                    message: 'Erreur lors de la récupération des données financières',
+                    message: 'Erreur lors de la récupération des données',
                     error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
                 });
             }
 
-            // Traitement des données pour correspondre à l'interface frontend
-            const processedFranchises = franchises.map(franchise => {
-                // Calcul des droits d'entrée (50000€ total, payable en 5 fois)
-                const totalDroitsEntree = 50000;
-                const montantInitial = 10000;
-                const montantEcheance = 10000;
-
-                const totalPaye = franchise.droit_entree_paye ? montantInitial : 0;
-                // Pour simplifier, on assume que si le droit initial est payé,
-                // le franchisé a payé quelques échéances aussi
-                const echeancesPayees = franchise.droit_entree_paye ? 2 : 0;
-                const totalPayeEcheances = echeancesPayees * montantEcheance;
-
+            // Transformation des données pour le frontend
+            const processedData = users.map(user => {
                 return {
-                    id: franchise.id,
-                    franchisee_name: franchise.franchisee_name,
-                    email: franchise.email,
-                    zone_attribution: franchise.zone_attribution || 'Non attribuée',
-                    phone: franchise.phone || 'Non renseigné',
-                    date_creation: franchise.date_creation,
-                    droit_entree: {
-                        initial_paye: franchise.droit_entree_paye,
-                        date_initial: franchise.droit_entree_paye ? franchise.date_creation : null,
-                        echeances_restantes: 4 - echeancesPayees,
-                        total_paye: totalPaye + totalPayeEcheances,
-                        prochaine_echeance: franchise.droit_entree_paye ?
-                            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] :
-                            franchise.date_creation
+                    id: user.id,
+                    franchisee_name: user.franchisee_name,
+                    email: user.email,
+                    phone: user.phone,
+                    assigned_zone: user.assigned_zone || 'Non assignée',
+                    date_creation: user.date_creation,
+
+                    // Informations de paiement simplifiées
+                    paiement: {
+                        statut: user.payment_status,
+                        montant_paye: user.payment_status === 'franchise_payment_completed' ? 50000 : 0,
+                        date_paiement: user.franchise_payment_completed_at,
+                        methode: user.franchise_payment_method || 'N/A'
                     },
-                    ca_total: parseFloat(franchise.ca_total) || 0,
-                    redevances_dues: parseFloat(franchise.redevances_dues) || 0,
-                    redevances_payees: parseFloat(franchise.redevances_dues) * 0.8 || 0, // 80% payées en moyenne
-                    commandes_mois: parseInt(franchise.commandes_mois) || 0,
-                    statut_global: franchise.statut_global
+
+                    // Informations franchise
+                    franchise: {
+                        existe: !!user.franchise_id,
+                        nom: user.franchise_name || null,
+                        active: user.franchise_active || false
+                    },
+
+                    // Statut global pour l'affichage
+                    statut_global: user.statut_global,
+
+                    // Indicateurs d'action nécessaire
+                    actions_requises: {
+                        peut_assigner_franchise: user.payment_status === 'franchise_payment_completed' && !user.franchise_id,
+                        peut_modifier_zone: true,
+                        paiement_complete: user.payment_status === 'franchise_payment_completed'
+                    }
                 };
             });
 
-            console.log(`${processedFranchises.length} franchisés trouvés`);
+            console.log(`${processedData.length} utilisateurs trouvés`);
 
             res.json({
                 success: true,
-                data: processedFranchises,
-                count: processedFranchises.length
+                data: processedData,
+                count: processedData.length
             });
         });
     },
 
     /**
-     * Récupérer les détails financiers d'un franchisé spécifique
+     * Récupérer les détails d'un utilisateur spécifique
      */
     getFranchiseDetail: (req, res) => {
         const { id } = req.params;
-        console.log(`Récupération des détails financiers pour le franchisé ID: ${id}`);
+        console.log(`Récupération des détails pour l'utilisateur ID: ${id}`);
 
         Finance.getFranchiseDetail(id, (err, data) => {
             if (err) {
                 console.error('Erreur getFranchiseDetail:', err);
                 return res.status(500).json({
                     success: false,
-                    message: 'Erreur lors de la récupération des détails financiers',
+                    message: 'Erreur lors de la récupération des détails',
                     error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
                 });
             }
@@ -85,172 +85,106 @@ const FinanceController = {
             if (!data) {
                 return res.status(404).json({
                     success: false,
-                    message: 'Franchisé non trouvé'
+                    message: 'Utilisateur non trouvé'
                 });
             }
 
-            const { franchise, ventes, commandes } = data;
-
-            // Construction de la réponse détaillée
-            const detailResponse = {
-                id: franchise.id,
-                franchisee_name: franchise.franchisee_name,
-                email: franchise.email,
-                zone_attribution: franchise.zone_attribution || 'Non attribuée',
-                phone: franchise.phone || 'Non renseigné',
-                date_creation: franchise.date_creation,
-
-                // Droits d'entrée détaillés
-                droits_entree: {
-                    initial: {
-                        paye: franchise.droit_entree_paye,
-                        date: franchise.droit_entree_paye ? franchise.date_creation : null,
-                        montant: 10000
-                    },
-                    echeances: [
-                        {
-                            numero: 1,
-                            montant: 10000,
-                            date_limite: new Date(new Date(franchise.date_creation).getTime() + 30*24*60*60*1000).toISOString().split('T')[0],
-                            paye: franchise.droit_entree_paye,
-                            date_paiement: franchise.droit_entree_paye ? franchise.date_creation : null
-                        },
-                        {
-                            numero: 2,
-                            montant: 10000,
-                            date_limite: new Date(new Date(franchise.date_creation).getTime() + 60*24*60*60*1000).toISOString().split('T')[0],
-                            paye: franchise.droit_entree_paye,
-                            date_paiement: franchise.droit_entree_paye ? franchise.date_creation : null
-                        },
-                        {
-                            numero: 3,
-                            montant: 10000,
-                            date_limite: new Date(new Date(franchise.date_creation).getTime() + 90*24*60*60*1000).toISOString().split('T')[0],
-                            paye: false,
-                            date_paiement: null
-                        },
-                        {
-                            numero: 4,
-                            montant: 10000,
-                            date_limite: new Date(new Date(franchise.date_creation).getTime() + 120*24*60*60*1000).toISOString().split('T')[0],
-                            paye: false,
-                            date_paiement: null
-                        }
-                    ]
-                },
-
-                // Déclarations CA et redevances
-                ca_declarations: ventes.map(vente => ({
-                    mois: vente.mois,
-                    ca_declare: parseFloat(vente.ca_declare) || 0,
-                    redevance_calculee: parseFloat(vente.redevance_calculee) || 0,
-                    statut: vente.statut,
-                    date_declaration: vente.date_declaration
-                })),
-
-                // Historique des commandes
-                commandes: commandes.map(commande => ({
-                    id: `CMD-${commande.id.toString().padStart(3, '0')}`,
-                    date: commande.date,
-                    montant: parseFloat(commande.montant) || 0,
-                    statut: commande.statut === 'livree' ? 'livree' : 'en_cours',
-                    articles_count: parseInt(commande.articles_count) || 0
-                }))
-            };
-
-            console.log(`Détails financiers récupérés pour ${franchise.franchisee_name}`);
+            console.log(`Détails récupérés pour ${data.franchise.franchisee_name}`);
 
             res.json({
                 success: true,
-                data: detailResponse
+                data: data.franchise
             });
         });
     },
 
     /**
-     * Générer un rapport financier pour un franchisé
+     * Créer une franchise pour un utilisateur qui a payé
      */
-    generateFinanceReport: (req, res) => {
+    createFranchiseForUser: (req, res) => {
         const { id } = req.params;
-        console.log(`Génération du rapport financier pour le franchisé ID: ${id}`);
+        const { name, address, city, postal_code, email, phone } = req.body;
 
-        Finance.generateFinanceReport(id, (err, data) => {
+        console.log(`Création de franchise pour l'utilisateur ID: ${id}`);
+
+        // Validation des données
+        if (!name || !address || !city) {
+            return res.status(400).json({
+                success: false,
+                message: 'Nom, adresse et ville sont requis pour créer une franchise'
+            });
+        }
+
+        const franchiseData = {
+            name: name.trim(),
+            address: address.trim(),
+            city: city.trim(),
+            postal_code: postal_code?.trim() || '',
+            email: email?.trim() || '',
+            phone: phone?.trim() || ''
+        };
+
+        Finance.createFranchiseForUser(id, franchiseData, (err, result) => {
             if (err) {
-                console.error('Erreur generateFinanceReport:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Erreur lors de la génération du rapport financier',
-                    error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
-                });
-            }
+                console.error('Erreur createFranchiseForUser:', err);
 
-            if (!data) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Franchisé non trouvé'
-                });
-            }
-
-            const { franchise, ventes, commandes } = data;
-
-            // Calculs des revenus pour Driv'n Cook
-            const redevances = parseFloat(ventes.ca_total || 0) * (franchise.pourcentage_ca / 100);
-            const margeCommandes = parseFloat(commandes.total_commandes || 0) * 0.15; // 15% de marge
-            const revenusTotal = redevances + margeCommandes;
-
-            const rapport = {
-                franchisee: {
-                    nom: `${franchise.first_name} ${franchise.last_name}`,
-                    email: franchise.email,
-                    zone: franchise.zone_attribution,
-                    date_creation: franchise.date_franchise
-                },
-                performance: {
-                    ca_total: parseFloat(ventes.ca_total || 0),
-                    nombre_ventes: parseInt(ventes.nombre_ventes || 0),
-                    ca_moyen_par_jour: parseFloat(ventes.ca_moyen_par_jour || 0),
-                    premiere_vente: ventes.premiere_vente,
-                    derniere_vente: ventes.derniere_vente
-                },
-                commandes: {
-                    total_commandes: parseFloat(commandes.total_commandes || 0),
-                    nombre_commandes: parseInt(commandes.nombre_commandes || 0),
-                    panier_moyen: parseFloat(commandes.panier_moyen || 0)
-                },
-                revenus_drivncook: {
-                    redevances_4_pourcent: redevances,
-                    marge_commandes_15_pourcent: margeCommandes,
-                    revenus_total: revenusTotal
-                },
-                ratios: {
-                    pourcentage_redevances: franchise.pourcentage_ca,
-                    rentabilite_franchise: revenusTotal > 0 ? ((revenusTotal / parseFloat(ventes.ca_total || 1)) * 100).toFixed(2) : 0
+                if (err.message.includes('pas encore payé')) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'L\'utilisateur doit d\'abord payer les droits de franchise (50 000€)'
+                    });
                 }
-            };
+
+                if (err.message.includes('franchise existe déjà')) {
+                    return res.status(409).json({
+                        success: false,
+                        message: 'Une franchise existe déjà pour cet utilisateur'
+                    });
+                }
+
+                return res.status(500).json({
+                    success: false,
+                    message: 'Erreur lors de la création de la franchise',
+                    error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
+                });
+            }
+
+            console.log(`Franchise créée avec l'ID: ${result.insertId}`);
 
             res.json({
                 success: true,
-                data: rapport,
-                generated_at: new Date().toISOString()
+                message: 'Franchise créée avec succès',
+                data: {
+                    franchise_id: result.insertId,
+                    user_id: id,
+                    franchise_name: franchiseData.name
+                }
             });
         });
     },
 
     /**
-     * Mettre à jour le statut de paiement des droits d'entrée
+     * Mettre à jour l'assignation de zone
      */
-    updateDroitEntreePaiement: (req, res) => {
+    updateZoneAssignment: (req, res) => {
         const { id } = req.params;
-        const { paye, date_paiement } = req.body;
+        const { zone } = req.body;
 
-        console.log(`Mise à jour du paiement droit d'entrée pour franchisé ${id}:`, { paye, date_paiement });
+        console.log(`Mise à jour de la zone pour l'utilisateur ID: ${id}, nouvelle zone: ${zone}`);
 
-        Finance.updateDroitEntreePaiement(id, paye, (err, result) => {
+        if (!zone || zone.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'La zone d\'assignation est requise'
+            });
+        }
+
+        Finance.updateZoneAssignment(id, { zone: zone.trim() }, (err, result) => {
             if (err) {
-                console.error('Erreur updateDroitEntreePaiement:', err);
+                console.error('Erreur updateZoneAssignment:', err);
                 return res.status(500).json({
                     success: false,
-                    message: 'Erreur lors de la mise à jour du paiement',
+                    message: 'Erreur lors de la mise à jour de la zone',
                     error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
                 });
             }
@@ -258,76 +192,129 @@ const FinanceController = {
             if (result.affectedRows === 0) {
                 return res.status(404).json({
                     success: false,
-                    message: 'Franchisé non trouvé'
+                    message: 'Utilisateur non trouvé'
                 });
             }
 
             res.json({
                 success: true,
-                message: 'Statut de paiement mis à jour avec succès',
+                message: 'Zone d\'assignation mise à jour avec succès',
                 data: {
-                    franchisee_id: id,
-                    droit_entree_paye: paye,
-                    date_paiement: date_paiement
+                    user_id: id,
+                    nouvelle_zone: zone.trim()
                 }
             });
         });
     },
 
     /**
-     * Récupérer les statistiques globales financières
+     * Statistiques globales simplifiées
      */
     getGlobalFinanceStats: (req, res) => {
-        console.log('Calcul des statistiques financières globales...');
+        console.log('Calcul des statistiques globales...');
 
         Finance.getGlobalFinanceStats((err, stats) => {
             if (err) {
                 console.error('Erreur getGlobalFinanceStats:', err);
                 return res.status(500).json({
                     success: false,
-                    message: 'Erreur lors du calcul des statistiques financières',
+                    message: 'Erreur lors du calcul des statistiques',
                     error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
                 });
             }
 
-            // Calcul des revenus totaux de Driv'n Cook
-            const redevances = parseFloat(stats.redevances_totales || 0);
-            const margeCommandes = parseFloat(stats.commandes_totales || 0) * 0.15;
-            const revenusTotal = redevances + margeCommandes;
-            const droitsEntreeEstimes = parseInt(stats.franchises_droits_payes || 0) * 50000;
-
             const response = {
                 franchises: {
                     total: parseInt(stats.total_franchises || 0),
-                    droits_payes: parseInt(stats.franchises_droits_payes || 0),
-                    taux_paiement_droits: stats.total_franchises > 0 ?
-                        ((stats.franchises_droits_payes / stats.total_franchises) * 100).toFixed(1) : 0
+                    payes: parseInt(stats.franchises_payes || 0),
+                    assignes: parseInt(stats.franchises_assignees || 0),
+                    en_attente_assignation: parseInt(stats.franchises_payes || 0) - parseInt(stats.franchises_assignees || 0)
                 },
-                chiffres_affaires: {
-                    ca_total_reseau: parseFloat(stats.ca_total_reseau || 0),
-                    ca_moyen_par_franchise: stats.total_franchises > 0 ?
-                        (parseFloat(stats.ca_total_reseau || 0) / stats.total_franchises).toFixed(2) : 0
+                revenus: {
+                    total_collecte: parseInt(stats.montant_total_collecte || 0),
+                    nouveaux_ce_mois: parseInt(stats.nouveaux_paiements_ce_mois || 0),
+                    revenus_ce_mois: parseInt(stats.nouveaux_paiements_ce_mois || 0) * 50000
                 },
-                revenus_drivncook: {
-                    droits_entree: droitsEntreeEstimes,
-                    redevances_4_pourcent: redevances,
-                    marge_commandes_15_pourcent: margeCommandes,
-                    total_revenus: revenusTotal + droitsEntreeEstimes
-                },
-                activite: {
-                    commandes_totales: parseInt(stats.commandes_totales || 0),
-                    commandes_ce_mois: parseInt(stats.commandes_ce_mois || 0),
-                    panier_moyen: stats.commandes_totales > 0 && stats.total_franchises > 0 ?
-                        (parseFloat(stats.commandes_totales) / stats.total_franchises).toFixed(2) : 0
+                taux: {
+                    paiement: stats.total_franchises > 0 ?
+                        ((stats.franchises_payes / stats.total_franchises) * 100).toFixed(1) : 0,
+                    assignation: stats.franchises_payes > 0 ?
+                        ((stats.franchises_assignees / stats.franchises_payes) * 100).toFixed(1) : 0
                 }
             };
 
-            console.log('Statistiques globales calculées');
+            console.log('Statistiques calculées');
 
             res.json({
                 success: true,
                 data: response,
                 calculated_at: new Date().toISOString()
+            });
+        });
+    },
+
+    /**
+     * Générer un rapport pour un utilisateur
+     */
+    generateUserReport: (req, res) => {
+        const { id } = req.params;
+        console.log(`Génération de rapport pour l'utilisateur ID: ${id}`);
+
+        Finance.getFranchiseDetail(id, (err, data) => {
+            if (err) {
+                console.error('Erreur generateUserReport:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Erreur lors de la génération du rapport',
+                    error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur interne'
+                });
+            }
+
+            if (!data) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Utilisateur non trouvé'
+                });
+            }
+
+            const user = data.franchise;
+
+            const rapport = {
+                utilisateur: {
+                    nom: user.franchisee_name,
+                    email: user.email,
+                    zone: user.assigned_zone,
+                    date_inscription: user.date_creation
+                },
+                paiement: {
+                    statut: user.paiement.statut,
+                    montant: user.paiement.montant_paye,
+                    date: user.paiement.paiement_complete,
+                    methode: user.paiement.methode_paiement
+                },
+                franchise: user.franchise ? {
+                    nom: user.franchise.nom,
+                    adresse: user.franchise.adresse,
+                    ville: user.franchise.ville,
+                    active: user.franchise.active,
+                    date_creation: user.franchise.date_creation
+                } : null,
+                actions_recommandees: []
+            };
+
+            // Recommandations
+            if (user.paiement.statut === 'franchise_payment_completed' && !user.franchise) {
+                rapport.actions_recommandees.push('Créer et assigner une franchise');
+            }
+
+            if (!user.assigned_zone || user.assigned_zone === 'Non assignée') {
+                rapport.actions_recommandees.push('Assigner une zone géographique');
+            }
+
+            res.json({
+                success: true,
+                data: rapport,
+                generated_at: new Date().toISOString()
             });
         });
     }
