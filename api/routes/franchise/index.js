@@ -15,106 +15,59 @@ try {
 
   // Contrôleur de fallback
   franchiseController = {
-    getAll: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - getAll",
-        data: [],
-      });
-    },
-    getById: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - getById",
-        data: { id: req.params.id },
-      });
-    },
-    create: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - create",
-        data: req.body,
-      });
-    },
-    update: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - update",
-        data: { id: req.params.id, ...req.body },
-      });
-    },
-    delete: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - delete",
-        data: { id: req.params.id },
-      });
-    },
-    getMyFranchises: (req, res) => {
-      res.json({
-        success: true,
-        message: "Contrôleur de fallback - getMyFranchises",
-        data: [],
-      });
-    },
+    getAll: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getAll", data: [] }),
+    getById: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getById", data: { id: req.params.id } }),
+    create: (req, res) => res.json({ success: true, message: "ContrôleurFallback-create", data: req.body }),
+    update: (req, res) => res.json({ success: true, message: "ContrôleurFallback-update", data: { id: req.params.id, ...req.body } }),
+    delete: (req, res) => res.json({ success: true, message: "ContrôleurFallback-delete", data: { id: req.params.id } }),
+    getMyFranchises: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getMyFranchises", data: [] }),
+    getAssignmentData: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getAssignmentData", data: { availableFranchises: [], eligibleUsers: [], summary: {} } }),
+    assignFranchise: (req, res) => res.json({ success: true, message: "ContrôleurFallback-assignFranchise" }),
+    unassignFranchise: (req, res) => res.json({ success: true, message: "ContrôleurFallback-unassignFranchise" }),
+    getEligibleUsers: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getEligibleUsers", data: [] }),
+    getAvailableFranchises: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getAvailableFranchises", data: [] }),
+    getUserAssignment: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getUserAssignment", data: null }),
+    getAssignmentHistory: (req, res) => res.json({ success: true, message: "ContrôleurFallback-getAssignmentHistory", data: [] })
   };
 }
 
 console.log("🛣️ Définition des routes...");
 
+// ===============================================
+// ROUTES SPÉCIFIQUES D'ABORD (plus spécifiques en premier)
+// ===============================================
+
+// Routes admin d'assignation
+router.get("/admin/assignment-data", authenticateToken, requireRole(["admin"]), franchiseController.getAssignmentData);
+router.get("/admin/assignment-history", authenticateToken, requireRole(["admin"]), franchiseController.getAssignmentHistory);
+router.get("/admin/eligible-users", authenticateToken, requireRole(["admin"]), franchiseController.getEligibleUsers);
+router.get("/admin/available-franchises", authenticateToken, requireRole(["admin"]), franchiseController.getAvailableFranchises);
+router.post("/admin/assign", authenticateToken, requireRole(["admin"]), franchiseController.assignFranchise);
+router.post("/admin/unassign/:id", authenticateToken, requireRole(["admin"]), franchiseController.unassignFranchise);
+
+// Routes utilisateur
+router.get("/my/franchises", authenticateToken, franchiseController.getMyFranchises);
+router.get("/my/assignment", authenticateToken, requireRole(["franchise_owner"]), franchiseController.getUserAssignment);
+
+// ===============================================
+// ROUTES GÉNÉRALES APRÈS (moins spécifiques)
+// ===============================================
+
 // Route publique - obtenir toutes les franchises
 router.get("/", franchiseController.getAll);
 
-// Route publique - obtenir une franchise par ID
+// Créer une nouvelle franchise
+router.post("/", authenticateToken, requireRole(["admin", "franchise_owner"]), validators.createFranchise, franchiseController.create);
+
+// Mettre à jour une franchise
+router.put("/:id", authenticateToken, requireRole(["admin", "franchise_owner"]), validators.createFranchise, franchiseController.update);
+
+// Supprimer une franchise
+router.delete("/:id", authenticateToken, requireRole(["admin"]), franchiseController.delete);
+
+// Route publique - obtenir une franchise par ID (DOIT ÊTRE EN DERNIER)
 router.get("/:id", franchiseController.getById);
 
-// Routes protégées - nécessitent une authentification
-
-// Obtenir les franchises de l'utilisateur connecté
-router.get(
-  "/my/franchises",
-  authenticateToken,
-  franchiseController.getMyFranchises,
-);
-
-// Créer une nouvelle franchise (admin ou franchise_owner)
-router.post(
-  "/",
-  authenticateToken,
-  requireRole(["admin", "franchise_owner"]),
-  validators.createFranchise,
-  franchiseController.create,
-);
-
-// Mettre à jour une franchise (admin ou propriétaire)
-router.put(
-  "/:id",
-  authenticateToken,
-  requireRole(["admin", "franchise_owner"]),
-  validators.createFranchise,
-  franchiseController.update,
-);
-
-// Supprimer une franchise (admin uniquement)
-router.delete(
-  "/:id",
-  authenticateToken,
-  requireRole(["admin"]),
-  franchiseController.delete,
-);
-
 console.log("✅ Routes franchise définies avec succès");
-
-// Debug: Afficher les routes définies
-if (router.stack) {
-  console.log("📋 Routes enregistrées:");
-  router.stack.forEach((layer, i) => {
-    const route = layer.route;
-    if (route) {
-      const methods = Object.keys(route.methods).join(", ").toUpperCase();
-      console.log(`  ${i + 1}. ${methods} ${route.path}`);
-    }
-  });
-}
 
 module.exports = router;

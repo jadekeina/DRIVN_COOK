@@ -296,7 +296,7 @@ INSERT INTO users (email, password, first_name, last_name, role, phone, is_verif
 
 -- 3. Créer des camions de test avec positions GPS
 INSERT INTO camions (
-    immatriculation, modele, annee, statut, franchisee_id, 
+    immatriculation, modele, annee, statut, franchisee_id,
     emplacement_actuel, latitude, longitude, derniere_position_update, kilometrage
 ) VALUES
 -- Camion assigné à Jean Dupont (Paris)
@@ -488,7 +488,7 @@ ORDER BY id;
 
 ALTER TABLE users ADD COLUMN payment_status ENUM(
     'pending_contract',
-    'contract_signed', 
+    'contract_signed',
     'deposit_paid',
     'franchise_payment_pending',
     'franchise_payment_completed',
@@ -500,5 +500,36 @@ ALTER TABLE users ADD COLUMN deposit_paid_at TIMESTAMP NULL;
 ALTER TABLE users ADD COLUMN franchise_payment_method VARCHAR(50) NULL;
 ALTER TABLE users ADD COLUMN franchise_payment_completed_at TIMESTAMP NULL;
 ALTER TABLE users ADD COLUMN assigned_zone VARCHAR(100) NULL;
+
 ALTER TABLE users ADD COLUMN activation_token VARCHAR(64) NULL;
 ALTER TABLE users ADD COLUMN activation_expires TIMESTAMP NULL;
+
+DESCRIBE users;
+
+ALTER TABLE franchise_candidatures
+    MODIFY COLUMN capital ENUM('oui', 'non') DEFAULT NULL;
+
+
+ALTER TABLE franchises
+    ADD COLUMN est_disponible BOOLEAN DEFAULT TRUE AFTER is_active,
+ADD COLUMN date_attribution TIMESTAMP NULL AFTER owner_id;
+
+
+UPDATE franchises
+SET est_disponible = FALSE, date_attribution = NOW()
+WHERE owner_id IS NOT NULL;
+
+-- Ajouter une référence à la franchise souhaitée
+ALTER TABLE franchise_candidatures
+    ADD COLUMN franchise_souhaitee_id INT NULL AFTER ville,
+ADD FOREIGN KEY (franchise_souhaitee_id) REFERENCES franchises(id);
+
+-- Insérer des franchises disponibles par ville
+INSERT INTO franchises (name, city, est_disponible, is_active) VALUES
+                                                                   ('Driv\'n Cook Paris Centre', 'Paris', TRUE, TRUE),
+('Driv\'n Cook Paris Nord', 'Paris', TRUE, TRUE),
+                                                                   ('Driv\'n Cook Lyon Presqu\'île', 'Lyon', TRUE, TRUE),
+                                                                   ('Driv\'n Cook Lyon Part-Dieu', 'Lyon', TRUE, TRUE),
+('Driv\'n Cook Marseille Vieux Port', 'Marseille', TRUE, TRUE),
+                                                                   ('Driv\'n Cook Marseille Canebière', 'Marseille', TRUE, TRUE);
+

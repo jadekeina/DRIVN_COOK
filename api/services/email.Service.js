@@ -1,9 +1,9 @@
 // services/emailService.js - CORRIGÉ
 const nodemailer = require("nodemailer");
 
-// Configuration du transporteur email - CORRECTION ICI
+// Configuration du transporteur email
 const createTransport = () => {
-  return nodemailer.createTransport({  // createTransport pas createTransporter
+  return nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: process.env.MAIL_USER,
@@ -13,12 +13,34 @@ const createTransport = () => {
 };
 
 const emailService = {
-  // Envoyer un email d'acceptation avec lien vers contrat React
+  // Méthode générique pour envoyer un email
+  sendEmail: async (to, subject, text, html) => {
+    try {
+      const transporter = createTransport();
+
+      const mailOptions = {
+        from: process.env.MAIL_USER,
+        to,
+        subject,
+        text,
+        html
+      };
+
+      const result = await transporter.sendMail(mailOptions);
+      console.log(`Email envoyé à ${to}:`, result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('Erreur envoi email:', error);
+      throw error;
+    }
+  },
+
+  // Email d'acceptation avec lien vers contrat React
   sendAcceptanceEmail: async (candidature, activationToken) => {
     try {
       const transporter = createTransport();
 
-      // URL vers le contrat React (pas vers reset password)
+      // URL vers le contrat React
       const contractUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/contract/${activationToken}`;
 
       const mailOptions = {
@@ -26,81 +48,54 @@ const emailService = {
         to: candidature.email,
         subject: "Félicitations ! Votre candidature Driv'n Cook a été acceptée",
         html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
-                        <h1>Candidature Acceptée !</h1>
-                    </div>
-                    
-                    <div style="padding: 20px; background-color: #f9f9f9;">
-                        <h2>Bonjour ${candidature.prenom} ${candidature.nom},</h2>
-                        
-                        <p>Excellente nouvelle ! Nous avons le plaisir de vous informer que votre candidature pour rejoindre le réseau <strong>Driv'n Cook</strong> a été acceptée !</p>
-                        
-                        <div style="background-color: white; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
-                            <h3>Récapitulatif de votre candidature :</h3>
-                            <ul>
-                                <li><strong>Zone souhaitée :</strong> ${candidature.zone}</li>
-                                <li><strong>Ville :</strong> ${candidature.ville}</li>
-                                <li><strong>Email :</strong> ${candidature.email}</li>
-                                <li><strong>Téléphone :</strong> ${candidature.telephone}</li>
-                            </ul>
-                        </div>
-                        
-                        <div style="background-color: #007bff; padding: 20px; border-radius: 8px; margin: 25px 0; text-align: center;">
-                            <h3 style="color: white; margin-top: 0;">Prochaines étapes</h3>
-                            <p style="color: white; margin-bottom: 20px;">Cliquez sur le bouton ci-dessous pour :</p>
-                            <ol style="color: white; text-align: left; margin: 15px 0;">
-                                <li><strong>Consulter et signer</strong> votre contrat de franchise</li>
-                                <li><strong>Effectuer le paiement</strong> du droit d'entrée (50 000€)</li>
-                                <li><strong>Créer votre compte</strong> franchisé</li>
-                            </ol>
-                            <a href="${contractUrl}" 
-                               style="display: inline-block; background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin-top: 15px;">
-                                CONSULTER MON CONTRAT
-                            </a>
-                            <p style="color: #e3f2fd; font-size: 12px; margin-top: 15px;">
-                                Ce lien est valide pendant 48h
-                            </p>
-                        </div>
-                        
-                        <div style="background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;">
-                            <h4>Informations importantes :</h4>
-                            <ul>
-                                <li><strong>Droit d'entrée :</strong> 50 000€ TTC</li>
-                                <li><strong>Paiement sécurisé</strong> par carte bancaire via Stripe</li>
-                                <li><strong>Formation incluse</strong> dans le pack franchisé</li>
-                                <li><strong>Support complet</strong> pendant 3 mois</li>
-                                <li><strong>Zone exclusive</strong> garantie</li>
-                            </ul>
-                        </div>
-                        
-                        <div style="background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;">
-                            <p><strong>Important :</strong></p>
-                            <p>Si le bouton ne fonctionne pas, copiez-collez ce lien dans votre navigateur :</p>
-                            <p style="word-break: break-all; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 3px;">
-                                ${contractUrl}
-                            </p>
-                        </div>
-                        
-                        <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                            <p><strong>Besoin d'aide ?</strong></p>
-                            <p>Notre équipe est à votre disposition :</p>
-                            <p>Email : contact@drivncook.com<br>
-                            Téléphone : 01 23 45 67 89<br>
-                            Du lundi au vendredi, 9h-18h</p>
-                        </div>
-                        
-                        <p>Nous sommes ravis de vous accueillir dans la famille Driv'n Cook !</p>
-                        
-                        <p>Cordialement,<br>
-                        <strong>L'équipe Driv'n Cook</strong></p>
-                    </div>
-                    
-                    <div style="background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;">
-                        © 2024 Driv'n Cook - Tous droits réservés
-                    </div>
-                </div>
-            `,
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
+              <h1>Candidature Acceptée !</h1>
+            </div>
+            
+            <div style="padding: 20px; background-color: #f9f9f9;">
+              <h2>Bonjour ${candidature.prenom} ${candidature.nom},</h2>
+              
+              <p>Excellente nouvelle ! Nous avons le plaisir de vous informer que votre candidature pour rejoindre le réseau <strong>Driv'n Cook</strong> a été acceptée !</p>
+              
+              <div style="background-color: white; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
+                <h3>Récapitulatif de votre candidature :</h3>
+                <ul>
+                  <li><strong>Zone souhaitée :</strong> ${candidature.zone}</li>
+                  <li><strong>Ville :</strong> ${candidature.ville}</li>
+                  <li><strong>Email :</strong> ${candidature.email}</li>
+                  <li><strong>Téléphone :</strong> ${candidature.telephone}</li>
+                </ul>
+              </div>
+              
+              <div style="background-color: #007bff; padding: 20px; border-radius: 8px; margin: 25px 0; text-align: center;">
+                <h3 style="color: white; margin-top: 0;">Prochaines étapes</h3>
+                <p style="color: white; margin-bottom: 20px;">Cliquez sur le bouton ci-dessous pour :</p>
+                <ol style="color: white; text-align: left; margin: 15px 0;">
+                  <li><strong>Consulter et signer</strong> votre contrat de franchise</li>
+                  <li><strong>Effectuer le paiement</strong> du droit d'entrée (50 000€)</li>
+                  <li><strong>Créer votre compte</strong> franchisé</li>
+                </ol>
+                <a href="${contractUrl}" 
+                   style="display: inline-block; background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; margin-top: 15px;">
+                  CONSULTER MON CONTRAT
+                </a>
+                <p style="color: #e3f2fd; font-size: 12px; margin-top: 15px;">
+                  Ce lien est valide pendant 48h
+                </p>
+              </div>
+              
+              <p>Nous sommes ravis de vous accueillir dans la famille Driv'n Cook !</p>
+              
+              <p>Cordialement,<br>
+              <strong>L'équipe Driv'n Cook</strong></p>
+            </div>
+            
+            <div style="background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;">
+              © 2024 Driv'n Cook - Tous droits réservés
+            </div>
+          </div>
+        `,
       };
 
       const result = await transporter.sendMail(mailOptions);
@@ -112,7 +107,7 @@ const emailService = {
     }
   },
 
-  // Email de confirmation de compte créé (optionnel)
+  // Email de confirmation de compte créé
   sendAccountCreatedEmail: async (userData) => {
     try {
       const transporter = createTransport();
@@ -122,54 +117,22 @@ const emailService = {
         to: userData.email,
         subject: "Compte créé - Bienvenue chez Driv'n Cook",
         html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
-                        <h1>Compte créé avec succès !</h1>
-                        <p>Bienvenue dans la famille Driv'n Cook</p>
-                    </div>
-                    
-                    <div style="padding: 20px; background-color: #f9f9f9;">
-                        <h2>Bonjour ${userData.first_name} ${userData.last_name},</h2>
-                        
-                        <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
-                            <h3>Votre parcours d'inscription est terminé</h3>
-                            <div style="font-size: 20px; font-weight: bold; color: #28a745; margin: 15px 0;">
-                                Paiement : 50 000 € TTC ✓
-                            </div>
-                            <div style="font-size: 20px; font-weight: bold; color: #28a745; margin: 15px 0;">
-                                Compte franchisé : Actif ✓
-                            </div>
-                        </div>
-                        
-                        <h3>Prochaines étapes :</h3>
-                        <ol style="line-height: 1.6;">
-                            <li><strong>Connexion :</strong> Votre compte franchisé est maintenant actif</li>
-                            <li><strong>Contact :</strong> Un responsable vous contactera dans les 48h</li>
-                            <li><strong>Documentation :</strong> Vous recevrez votre pack franchisé par email</li>
-                            <li><strong>Formation :</strong> Programmée dans les 2 semaines</li>
-                        </ol>
-                        
-                        <div style="background-color: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
-                            <p style="margin: 0 0 15px 0;"><strong>Vos identifiants de connexion :</strong></p>
-                            <p style="margin: 5px 0;"><strong>Email :</strong> ${userData.email}</p>
-                            <p style="margin: 5px 0;"><strong>Mot de passe :</strong> Celui que vous avez défini</p>
-                            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" 
-                               style="display: inline-block; background-color: #28a745; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; margin-top: 15px; font-weight: bold;">
-                               Accéder à mon espace franchisé
-                            </a>
-                        </div>
-                        
-                        <p>Nous sommes impatients de commencer cette aventure avec vous !</p>
-                        
-                        <p>Cordialement,<br>
-                        <strong>L'équipe Driv'n Cook</strong></p>
-                    </div>
-                    
-                    <div style="background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;">
-                        © 2024 Driv'n Cook - Tous droits réservés
-                    </div>
-                </div>
-            `,
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
+              <h1>Compte créé avec succès !</h1>
+              <p>Bienvenue dans la famille Driv'n Cook</p>
+            </div>
+            
+            <div style="padding: 20px; background-color: #f9f9f9;">
+              <h2>Bonjour ${userData.first_name} ${userData.last_name},</h2>
+              
+              <p>Votre compte franchisé est maintenant actif.</p>
+              
+              <p>Cordialement,<br>
+              <strong>L'équipe Driv'n Cook</strong></p>
+            </div>
+          </div>
+        `,
       };
 
       const result = await transporter.sendMail(mailOptions);
@@ -181,7 +144,7 @@ const emailService = {
     }
   },
 
-  // Email de refus (existant, inchangé)
+  // Email de refus
   sendRejectionEmail: async (candidature) => {
     try {
       const transporter = createTransport();
@@ -191,47 +154,23 @@ const emailService = {
         to: candidature.email,
         subject: "Réponse à votre candidature Driv'n Cook",
         html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <div style="background-color: #6c757d; color: white; padding: 20px; text-align: center;">
-                            <h1>Réponse à votre candidature</h1>
-                        </div>
-                        
-                        <div style="padding: 20px; background-color: #f9f9f9;">
-                            <h2>Bonjour ${candidature.prenom} ${candidature.nom},</h2>
-                            
-                            <p>Nous vous remercions sincèrement pour l'intérêt que vous portez au réseau <strong>Driv'n Cook</strong> et pour le temps que vous avez consacré à votre candidature.</p>
-                            
-                            <p>Après étude attentive de votre dossier, nous regrettons de vous informer que nous ne pouvons pas donner suite favorable à votre candidature pour le moment.</p>
-                            
-                            <div style="background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;">
-                                <p><strong>Cette décision ne remet pas en question vos qualités</strong></p>
-                                <p>Nous recevons de nombreuses candidatures et devons faire des choix difficiles en fonction de nos critères spécifiques et de nos besoins actuels.</p>
-                            </div>
-                            
-                            <h3>Pour l'avenir :</h3>
-                            <ul>
-                                <li>Votre candidature reste dans notre base de données</li>
-                                <li>Nous pourrons vous recontacter si de nouvelles opportunités se présentent</li>
-                                <li>N'hésitez pas à repostuler dans 6 mois si votre situation évolue</li>
-                            </ul>
-                            
-                            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                                <p><strong>Restons en contact :</strong></p>
-                                <p>Email : contact@drivncook.com<br>
-                                Téléphone : 01 23 45 67 89</p>
-                            </div>
-                            
-                            <p>Nous vous souhaitons plein succès dans vos projets futurs.</p>
-                            
-                            <p>Cordialement,<br>
-                            <strong>L'équipe Driv'n Cook</strong></p>
-                        </div>
-                        
-                        <div style="background-color: #333; color: white; padding: 10px; text-align: center; font-size: 12px;">
-                            © 2024 Driv'n Cook - Tous droits réservés
-                        </div>
-                    </div>
-                `,
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #6c757d; color: white; padding: 20px; text-align: center;">
+              <h1>Réponse à votre candidature</h1>
+            </div>
+            
+            <div style="padding: 20px; background-color: #f9f9f9;">
+              <h2>Bonjour ${candidature.prenom} ${candidature.nom},</h2>
+              
+              <p>Nous vous remercions sincèrement pour l'intérêt que vous portez au réseau <strong>Driv'n Cook</strong>.</p>
+              
+              <p>Après étude attentive de votre dossier, nous regrettons de vous informer que nous ne pouvons pas donner suite favorable à votre candidature pour le moment.</p>
+              
+              <p>Cordialement,<br>
+              <strong>L'équipe Driv'n Cook</strong></p>
+            </div>
+          </div>
+        `,
       };
 
       const result = await transporter.sendMail(mailOptions);
@@ -241,6 +180,126 @@ const emailService = {
       console.error("Erreur envoi email refus:", error);
       throw error;
     }
+  },
+
+  // Email d'attribution de franchise
+  sendFranchiseAssignmentEmail: async (data) => {
+    const { email, prenom, nom, franchise_nom, franchise_ville } = data;
+
+    const subject = `Franchise attribuée - ${franchise_nom}`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Franchise Attribuée</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #5C95FF 0%, #B9E6FF 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1>Franchise Attribuée !</h1>
+          <p>Félicitations ${prenom}, votre franchise vous attend</p>
+        </div>
+        
+        <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+          <p>Bonjour <strong>${prenom} ${nom}</strong>,</p>
+          
+          <p>Nous avons le plaisir de vous informer qu'une franchise Driv'n Cook vous a été attribuée !</p>
+          
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #5C95FF;">
+            <h3>Votre Franchise</h3>
+            <p><strong>Nom :</strong> ${franchise_nom}</p>
+            <p><strong>Ville :</strong> ${franchise_ville}</p>
+            <p><strong>Date d'attribution :</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+          </div>
+          
+          <p>Bienvenue officiellement dans le réseau Driv'n Cook !</p>
+          
+          <p>Cordialement,<br>
+          L'équipe Driv'n Cook</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `
+      Franchise Attribuée - ${franchise_nom}
+      
+      Bonjour ${prenom} ${nom},
+      
+      Une franchise Driv'n Cook vous a été attribuée !
+      
+      Votre Franchise :
+      - Nom : ${franchise_nom}
+      - Ville : ${franchise_ville}
+      - Date d'attribution : ${new Date().toLocaleDateString('fr-FR')}
+      
+      Bienvenue dans le réseau Driv'n Cook !
+    `;
+
+    return emailService.sendEmail(email, subject, text, html);
+  },
+
+  // Email de désattribution de franchise
+  sendFranchiseUnassignmentEmail: async (data) => {
+    const { email, prenom, nom, franchise_nom, franchise_ville } = data;
+
+    const subject = `Modification de votre franchise - ${franchise_nom}`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Modification Franchise</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #f8f9fa; color: #333; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; border-bottom: 3px solid #6c757d;">
+          <h1>Modification de votre franchise</h1>
+          <p>Information importante concernant ${prenom}</p>
+        </div>
+        
+        <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+          <p>Bonjour <strong>${prenom} ${nom}</strong>,</p>
+          
+          <p>Une modification a été apportée à votre attribution de franchise.</p>
+          
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #6c757d;">
+            <h3>Franchise concernée</h3>
+            <p><strong>Nom :</strong> ${franchise_nom}</p>
+            <p><strong>Ville :</strong> ${franchise_ville}</p>
+            <p><strong>Date de modification :</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+          </div>
+          
+          <p>Cette franchise n'est plus attribuée à votre compte.</p>
+          
+          <p>Merci pour votre compréhension.</p>
+          
+          <p>Cordialement,<br>
+          L'équipe Driv'n Cook</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `
+      Modification de votre franchise - ${franchise_nom}
+      
+      Bonjour ${prenom} ${nom},
+      
+      Une modification a été apportée à votre attribution de franchise.
+      
+      Franchise concernée :
+      - Nom : ${franchise_nom}  
+      - Ville : ${franchise_ville}
+      
+      Cette franchise n'est plus attribuée à votre compte.
+      
+      Cordialement,
+      L'équipe Driv'n Cook
+    `;
+
+    return emailService.sendEmail(email, subject, text, html);
   },
 
   // Test de connexion email
@@ -254,7 +313,7 @@ const emailService = {
       console.error("Erreur connexion email:", error);
       return false;
     }
-  },
+  }
 };
 
 module.exports = emailService;
