@@ -1,539 +1,478 @@
-const Candidature = require("../models/candidature");
-const { validationResult } = require("express-validator");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const emailService = require("../services/email.Service");
-const crypto = require("crypto"); // AJOUTE EN HAUT DU FICHIER
-
-// Fonction pour normaliser le numéro de téléphone
-const normalizePhoneNumber = (phone) => {
-  console.log("Normalisation téléphone - Input:", phone);
-
-  // Supprimer tous les espaces, tirets, points
-  let cleanPhone = phone.replace(/[\s\-\.]/g, "");
-  console.log("Téléphone après nettoyage:", cleanPhone);
-
-  // Convertir +33 en 0
-  if (cleanPhone.startsWith("+33")) {
-    cleanPhone = "0" + cleanPhone.substring(3);
-    console.log("Conversion +33 -> 0:", cleanPhone);
-  } else if (cleanPhone.startsWith("0033")) {
-    cleanPhone = "0" + cleanPhone.substring(4);
-    console.log("Conversion 0033 -> 0:", cleanPhone);
-  }
-
-  // S'assurer que le numéro a 10 chiffres
-  if (cleanPhone.length > 10) {
-    cleanPhone = cleanPhone.substring(0, 10);
-    console.log("Troncature à 10 chiffres:", cleanPhone);
-  }
-
-  console.log("Téléphone normalisé final:", cleanPhone);
-  return cleanPhone;
-};
-
-// Configuration Multer pour l'upload de fichiers
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = "uploads/candidatures/";
-
-    // Créer le dossier s'il n'existe pas
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Nom de fichier unique avec timestamp
-    const timestamp = Date.now();
-    const ext = path.extname(file.originalname);
-    const baseName = path.basename(file.originalname, ext);
-    cb(null, `${timestamp}-${baseName}${ext}`);
-  },
-});
-
-const fileFilter = (req, file, cb) => {
-  // Types de fichiers acceptés
-  const allowedTypes = {
-    cv: [".pdf"],
-    lettre: [".pdf"],
-    carte: [".pdf", ".jpg", ".jpeg", ".png"],
-  };
-
-  const ext = path.extname(file.originalname).toLowerCase();
-  const fieldAllowedTypes = allowedTypes[file.fieldname] || [];
-
-  if (fieldAllowedTypes.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(
-      new Error(`Type de fichier non autorisé pour ${file.fieldname}: ${ext}`),
-      false,
-    );
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max
-  },
-});
+const db = require('../config/db');
+const emailService = require('../services/email.Service');
 
 const CandidatureController = {
-  // Upload middleware
-  uploadFiles: upload.fields([
-    { name: "cv", maxCount: 1 },
-    { name: "lettre", maxCount: 1 },
-    { name: "carte", maxCount: 1 },
-  ]),
-
-  // Soumettre une candidature
+  // Créer une nouvelle candidature avec choix de franchise
   create: async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
+      const {
+        // Informations personnelles
+        prenom,
+        nom,
+        email,
+        telephone,
+
+        // Informations de candidature
+        ville,
+        zone,
+        franchise_souhaitee_id, // NOUVEAU : ID de la franchise souhaitée
+
+        // Expérience
+        experience_resto,
+        commentaire_resto,
+        ancien_franchise,
+        commentaire_franchise,
+
+        // Financier
+        capital,
+
+        // Motivation
+        motivation,
+
+        // Consentements
+        accept_terms,
+        read_contract
+      } = req.body;
+
+      console.log('[CANDIDATURE] Création candidature avec franchise:', {
+        email,
+        ville,
+        franchise_souhaitee_id
+      });
+
+      // Validations de base
+      if (!prenom || !nom || !email || !telephone || !ville || !zone || !motivation) {
         return res.status(400).json({
           success: false,
-          message: "Erreurs de validation",
-          errors: errors.array(),
+          message: "Tous les champs obligatoires doivent être remplis"
         });
       }
 
-      // Vérifier que tous les fichiers requis sont présents
-      if (
-        !req.files ||
-        !req.files.cv ||
-        !req.files.lettre ||
-        !req.files.carte
-      ) {
+      if (!accept_terms || !read_contract) {
         return res.status(400).json({
           success: false,
-          message:
-            "Tous les documents sont requis (CV, lettre de motivation, carte d'identité)",
+          message: "Vous devez accepter les conditions et confirmer avoir lu le contrat"
         });
       }
 
-      // Vérifier si une candidature existe déjà pour cet email
-      Candidature.findByEmail(req.body.email, (err, existingCandidature) => {
-        if (err) {
-          console.error("Erreur vérification candidature existante:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur serveur",
-          });
-        }
+      // Vérifier que la franchise souhaitée est disponible (si spécifiée)
+      if (franchise_souhaitee_id) {
+        const checkFranchiseQuery = `
+                    SELECT id, name, city, owner_id 
+                    FROM franchises 
+                    WHERE id = ? AND is_active = TRUE
+                `;
 
-        if (
-          existingCandidature &&
-          existingCandidature.statut === "en_attente"
-        ) {
-          return res.status(409).json({
-            success: false,
-            message:
-              "Une candidature est déjà en cours de traitement pour cet email",
-          });
-        }
-
-        console.log("Téléphone reçu dans req.body:", req.body.telephone);
-
-        // Préparer les données de candidature avec téléphone normalisé
-        const normalizedPhone = normalizePhoneNumber(req.body.telephone);
-        console.log("Téléphone après normalisation:", normalizedPhone);
-
-        const candidatureData = {
-          ...req.body,
-          telephone: normalizedPhone, // NORMALISATION ICI
-          cv_filename: req.files.cv[0].filename,
-          lettre_filename: req.files.lettre[0].filename,
-          carte_filename: req.files.carte[0].filename,
-          accept_terms:
-            req.body.acceptTerms === "true" || req.body.acceptTerms === true,
-          read_contract:
-            req.body.readContract === "true" || req.body.readContract === true,
-        };
-
-        console.log("Données candidature préparées:", {
-          ...candidatureData,
-          telephone: candidatureData.telephone, // Log spécifique pour le téléphone
-          cv_filename: candidatureData.cv_filename,
-          lettre_filename: candidatureData.lettre_filename,
-          carte_filename: candidatureData.carte_filename,
-        });
-
-        // Créer la candidature
-        Candidature.create(candidatureData, (err, result) => {
-          if (err) {
-            console.error("Erreur création candidature:", err);
+        db.query(checkFranchiseQuery, [franchise_souhaitee_id], (checkErr, checkResults) => {
+          if (checkErr) {
+            console.error('Erreur vérification franchise:', checkErr);
             return res.status(500).json({
               success: false,
-              message: "Erreur lors de la soumission de la candidature",
+              message: "Erreur lors de la vérification de la franchise"
             });
           }
 
-          res.status(201).json({
-            success: true,
-            message: "Candidature soumise avec succès",
-            data: {
-              id: result.insertId,
-              statut: "en_attente",
-            },
-          });
-        });
-      });
-    } catch (error) {
-      console.error("Erreur dans create candidature:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur interne du serveur",
-      });
-    }
-  },
-
-  // Obtenir toutes les candidatures (admin)
-  getAll: (req, res) => {
-    try {
-      Candidature.getAll((err, results) => {
-        if (err) {
-          console.error("Erreur récupération candidatures:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur lors de la récupération des candidatures",
-          });
-        }
-
-        res.json({
-          success: true,
-          data: results,
-          count: results.length,
-        });
-      });
-    } catch (error) {
-      console.error("Erreur dans getAll candidatures:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur interne du serveur",
-      });
-    }
-  },
-
-  // Obtenir une candidature par ID (admin)
-  getById: (req, res) => {
-    try {
-      const { id } = req.params;
-
-      if (!id || isNaN(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "ID de candidature invalide",
-        });
-      }
-
-      Candidature.findById(id, (err, result) => {
-        if (err) {
-          console.error("Erreur recherche candidature:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur serveur",
-          });
-        }
-
-        if (!result) {
-          return res.status(404).json({
-            success: false,
-            message: "Candidature non trouvée",
-          });
-        }
-
-        res.json({
-          success: true,
-          data: result,
-        });
-      });
-    } catch (error) {
-      console.error("Erreur dans getById candidature:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur interne du serveur",
-      });
-    }
-  },
-
-  // Mettre à jour le statut d'une candidature (admin)
-  updateStatus: async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { statut, notes_internes } = req.body;
-
-      if (!id || isNaN(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "ID de candidature invalide",
-        });
-      }
-
-      const statutsValides = ["en_attente", "en_cours", "acceptee", "refusee"];
-      if (!statutsValides.includes(statut)) {
-        return res.status(400).json({
-          success: false,
-          message: "Statut invalide",
-        });
-      }
-
-      // D'abord récupérer les données de la candidature
-      Candidature.findById(id, async (err, candidature) => {
-        if (err) {
-          console.error("Erreur recherche candidature:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur serveur",
-          });
-        }
-
-        if (!candidature) {
-          return res.status(404).json({
-            success: false,
-            message: "Candidature non trouvée",
-          });
-        }
-
-        // Mettre à jour le statut en BDD
-        Candidature.updateStatus(
-          id,
-          statut,
-          notes_internes || "",
-          async (err, result) => {
-            if (err) {
-              console.error("Erreur mise à jour statut:", err);
-              return res.status(500).json({
-                success: false,
-                message: "Erreur lors de la mise à jour",
-              });
-            }
-
-            if (result.affectedRows === 0) {
-              return res.status(404).json({
-                success: false,
-                message: "Candidature non trouvée",
-              });
-            }
-
-            // ENVOI D'EMAIL AUTOMATIQUE selon le nouveau statut
-            let emailSent = false;
-            try {
-              if (statut === "acceptee") {
-                console.log(
-                  "📧 Envoi email d'acceptation à:",
-                  candidature.email,
-                );
-
-                // Générer un token d'activation sécurisé
-                const activationToken = crypto.randomBytes(32).toString("hex");
-                console.log("🔑 Token généré:", activationToken);
-
-                // Sauvegarder le token en BDD (expire dans 48h)
-                const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48h
-                const db = require("../config/db");
-
-                db.query(
-                  "INSERT INTO user_activations (candidature_id, token, email, expires_at) VALUES (?, ?, ?, ?)",
-                  [
-                    candidature.id,
-                    activationToken,
-                    candidature.email,
-                    expiresAt,
-                  ],
-                  (tokenErr) => {
-                    if (tokenErr) {
-                      console.error("Erreur sauvegarde token:", tokenErr);
-                      // Continue quand même
-                    }
-                  },
-                );
-
-                await emailService.sendAcceptanceEmail(
-                  candidature,
-                  activationToken,
-                );
-                console.log("✅ Email d'acceptation envoyé avec succès");
-                emailSent = true;
-              } else if (statut === "refusee") {
-                console.log("📧 Envoi email de refus à:", candidature.email);
-                await emailService.sendRejectionEmail(candidature);
-                console.log("✅ Email de refus envoyé avec succès");
-                emailSent = true;
-              }
-            } catch (emailError) {
-              console.error("❌ Erreur envoi email:", emailError);
-              // On continue même si l'email échoue, mais on le signale
-            }
-
-            res.json({
-              success: true,
-              message: `Statut mis à jour avec succès${emailSent ? " et email envoyé automatiquement" : ""}`,
-              data: {
-                id: id,
-                nouveauStatut: statut,
-                emailEnvoye: emailSent,
-              },
-            });
-          },
-        );
-      });
-    } catch (error) {
-      console.error("Erreur dans updateStatus:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur interne du serveur",
-      });
-    }
-  },
-  // Obtenir les statistiques des candidatures (admin)
-  getStats: (req, res) => {
-    try {
-      Candidature.getStats((err, stats) => {
-        if (err) {
-          console.error("Erreur récupération stats:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur lors de la récupération des statistiques",
-          });
-        }
-
-        res.json({
-          success: true,
-          data: stats,
-        });
-      });
-    } catch (error) {
-      console.error("Erreur dans getStats:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur interne du serveur",
-      });
-    }
-  },
-
-  // À ajouter dans votre candidatureController.js
-
-// Fonction pour télécharger un fichier
-// À ajouter dans candidatureController.js
-  downloadFile: (req, res) => {
-    try {
-      const { candidatureId, type } = req.params;
-
-      console.log(`Demande de téléchargement - Candidature: ${candidatureId}, Type: ${type}`);
-
-      if (!candidatureId || isNaN(candidatureId)) {
-        return res.status(400).json({
-          success: false,
-          message: "ID de candidature invalide"
-        });
-      }
-
-      const allowedTypes = ['cv', 'lettre', 'carte'];
-      if (!allowedTypes.includes(type)) {
-        return res.status(400).json({
-          success: false,
-          message: "Type de fichier non autorisé"
-        });
-      }
-
-      // Récupérer la candidature pour obtenir le nom du fichier
-      const Candidature = require("../models/candidature");
-      Candidature.findById(candidatureId, (err, candidature) => {
-        if (err) {
-          console.error("Erreur recherche candidature pour téléchargement:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Erreur serveur"
-          });
-        }
-
-        if (!candidature) {
-          return res.status(404).json({
-            success: false,
-            message: "Candidature non trouvée"
-          });
-        }
-
-        // Obtenir le nom du fichier selon le type
-        let filename;
-        switch (type) {
-          case 'cv':
-            filename = candidature.cv_filename;
-            break;
-          case 'lettre':
-            filename = candidature.lettre_filename;
-            break;
-          case 'carte':
-            filename = candidature.carte_filename;
-            break;
-          default:
+          if (!checkResults || checkResults.length === 0) {
             return res.status(400).json({
               success: false,
-              message: "Type de fichier invalide"
+              message: "Franchise sélectionnée introuvable"
             });
-        }
+          }
 
-        if (!filename) {
-          return res.status(404).json({
-            success: false,
-            message: "Fichier non trouvé"
-          });
-        }
+          const franchise = checkResults[0];
+          if (franchise.owner_id !== null) {
+            return res.status(400).json({
+              success: false,
+              message: "Désolé, cette franchise n'est plus disponible"
+            });
+          }
 
-        // Construire le chemin complet vers le fichier
-        const path = require("path");
-        const fs = require("fs");
-        const filePath = path.join(__dirname, '../uploads/candidatures/', filename);
+          // Franchise valide et disponible, continuer avec la création
+          createCandidature();
+        });
+      } else {
+        // Aucune franchise spécifiée, créer directement
+        createCandidature();
+      }
 
-        console.log(`Chemin du fichier: ${filePath}`);
+      function createCandidature() {
+        // Vérifier si une candidature existe déjà pour cet email
+        db.query('SELECT id FROM franchise_candidatures WHERE email = ?', [email], (err, existing) => {
+          if (err) {
+            console.error('Erreur vérification candidature existante:', err);
+            return res.status(500).json({
+              success: false,
+              message: "Erreur serveur"
+            });
+          }
 
-        // Vérifier que le fichier existe
-        if (!fs.existsSync(filePath)) {
-          console.error(`Fichier non trouvé: ${filePath}`);
-          return res.status(404).json({
-            success: false,
-            message: "Fichier non trouvé sur le serveur"
-          });
-        }
+          if (existing && existing.length > 0) {
+            return res.status(409).json({
+              success: false,
+              message: "Une candidature existe déjà pour cette adresse email"
+            });
+          }
 
-        try {
-          // Envoyer le fichier
-          res.download(filePath, filename, (err) => {
-            if (err) {
-              console.error("Erreur lors du téléchargement:", err);
-              if (!res.headersSent) {
-                res.status(500).json({
-                  success: false,
-                  message: "Erreur lors du téléchargement"
-                });
-              }
-            } else {
-              console.log(`Fichier téléchargé avec succès: ${filename}`);
+          // Créer la candidature
+          const insertQuery = `
+                        INSERT INTO franchise_candidatures (
+                            prenom, nom, email, telephone, ville, zone,
+                            franchise_souhaitee_id,
+                            experience_resto, commentaire_resto,
+                            ancien_franchise, commentaire_franchise,
+                            capital, motivation,
+                            accept_terms, read_contract
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `;
+
+          const values = [
+            prenom, nom, email, telephone, ville, zone,
+            franchise_souhaitee_id || null,
+            experience_resto, commentaire_resto || null,
+            ancien_franchise, commentaire_franchise || null,
+            capital, motivation,
+            accept_terms, read_contract
+          ];
+
+          db.query(insertQuery, values, async (insertErr, result) => {
+            if (insertErr) {
+              console.error('Erreur création candidature:', insertErr);
+              return res.status(500).json({
+                success: false,
+                message: "Erreur lors de la création de la candidature"
+              });
             }
+
+            console.log(`[CANDIDATURE] Candidature créée avec ID: ${result.insertId}`);
+
+            // Préparer les données pour l'email
+            const candidatureData = {
+              prenom,
+              nom,
+              email,
+              telephone,
+              ville,
+              zone,
+              franchise_souhaitee: franchise_souhaitee_id ?
+                  `Franchise spécifique demandée (ID: ${franchise_souhaitee_id})` :
+                  `Toute franchise disponible à ${ville}`
+            };
+
+            // Envoyer email de confirmation
+            try {
+              await emailService.sendCandidatureConfirmation(candidatureData);
+              console.log(`[EMAIL] Confirmation candidature envoyée à ${email}`);
+            } catch (emailError) {
+              console.error('[EMAIL] Erreur envoi confirmation:', emailError);
+              // Ne pas faire échouer la candidature si l'email échoue
+            }
+
+            res.status(201).json({
+              success: true,
+              message: "Candidature soumise avec succès ! Vous recevrez une réponse sous 48h.",
+              data: {
+                candidature_id: result.insertId,
+                email,
+                franchise_souhaitee_id
+              }
+            });
           });
-        } catch (downloadError) {
-          console.error("Erreur téléchargement:", downloadError);
-          res.status(500).json({
-            success: false,
-            message: "Erreur lors du téléchargement"
-          });
-        }
-      });
+        });
+      }
 
     } catch (error) {
-      console.error("Erreur dans downloadFile:", error);
+      console.error('Erreur dans create candidature:', error);
       res.status(500).json({
         success: false,
         message: "Erreur interne du serveur"
       });
     }
   },
+
+  // Méthode pour récupérer toutes les candidatures (admin)
+  getAll: (req, res) => {
+    try {
+      const query = `
+                SELECT 
+                    fc.*,
+                    f.name as franchise_souhaitee_nom,
+                    f.city as franchise_souhaitee_ville
+                FROM franchise_candidatures fc
+                LEFT JOIN franchises f ON fc.franchise_souhaitee_id = f.id
+                ORDER BY fc.created_at DESC
+            `;
+
+      db.query(query, (err, results) => {
+        if (err) {
+          console.error('Erreur récupération candidatures:', err);
+          return res.status(500).json({
+            success: false,
+            message: "Erreur lors de la récupération des candidatures"
+          });
+        }
+
+        res.json({
+          success: true,
+          data: results,
+          count: results.length
+        });
+      });
+    } catch (error) {
+      console.error('Erreur dans getAll candidatures:', error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur interne du serveur"
+      });
+    }
+  },
+
+  getById: (req, res) => {
+    try {
+      const { id } = req.params;
+      const sql = `
+        SELECT 
+          fc.*,
+          f.name AS franchise_souhaitee_nom,
+          f.city AS franchise_souhaitee_ville
+        FROM franchise_candidatures fc
+        LEFT JOIN franchises f ON fc.franchise_souhaitee_id = f.id
+        WHERE fc.id = ?
+      `;
+      db.query(sql, [id], (err, rows) => {
+        if (err) {
+          console.error("Erreur getById candidature:", err);
+          return res.status(500).json({ success: false, message: "Erreur serveur" });
+        }
+        if (!rows || rows.length === 0) {
+          return res.status(404).json({ success: false, message: "Candidature non trouvée" });
+        }
+        res.json({ success: true, data: rows[0] });
+      });
+    } catch (error) {
+      console.error("Erreur dans getById:", error);
+      res.status(500).json({ success: false, message: "Erreur interne du serveur" });
+    }
+  },
+
+  // Accepter une candidature et envoyer le contrat
+  accept: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { notes_internes } = req.body;
+
+      console.log(`[CANDIDATURE] Acceptation candidature ${id}`);
+
+      // Récupérer la candidature
+      const candidatureQuery = `
+                SELECT fc.*, f.name as franchise_nom
+                FROM franchise_candidatures fc
+                LEFT JOIN franchises f ON fc.franchise_souhaitee_id = f.id
+                WHERE fc.id = ?
+            `;
+
+      db.query(candidatureQuery, [id], async (err, results) => {
+        if (err) {
+          console.error('Erreur récupération candidature:', err);
+          return res.status(500).json({
+            success: false,
+            message: "Erreur serveur"
+          });
+        }
+
+        if (!results || results.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Candidature non trouvée"
+          });
+        }
+
+        const candidature = results[0];
+
+        if (candidature.statut !== 'en_attente') {
+          return res.status(400).json({
+            success: false,
+            message: "Cette candidature a déjà été traitée"
+          });
+        }
+
+        // Vérifier que la franchise est toujours disponible (si spécifiée)
+        if (candidature.franchise_souhaitee_id) {
+          const checkQuery = `
+                        SELECT owner_id FROM franchises 
+                        WHERE id = ? AND is_active = TRUE
+                    `;
+
+          db.query(checkQuery, [candidature.franchise_souhaitee_id], (checkErr, checkResult) => {
+            if (checkErr || !checkResult || checkResult.length === 0) {
+              return res.status(400).json({
+                success: false,
+                message: "La franchise souhaitée n'est plus disponible"
+              });
+            }
+
+            if (checkResult[0].owner_id !== null) {
+              return res.status(400).json({
+                success: false,
+                message: "La franchise souhaitée a déjà été attribuée"
+              });
+            }
+
+            // Continuer avec l'acceptation
+            proceedWithAcceptance();
+          });
+        } else {
+          proceedWithAcceptance();
+        }
+
+        async function proceedWithAcceptance() {
+          // Générer token d'activation
+          const crypto = require('crypto');
+          const activationToken = crypto.randomBytes(32).toString('hex');
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 jours
+
+          // Mettre à jour le statut et créer le token
+          db.beginTransaction(async (transErr) => {
+            if (transErr) {
+              console.error('Erreur transaction:', transErr);
+              return res.status(500).json({
+                success: false,
+                message: "Erreur serveur"
+              });
+            }
+
+            // Mettre à jour la candidature
+            const updateQuery = `
+                            UPDATE franchise_candidatures 
+                            SET statut = 'acceptee', notes_internes = ?, updated_at = NOW()
+                            WHERE id = ?
+                        `;
+
+            db.query(updateQuery, [notes_internes || '', id], (updateErr) => {
+              if (updateErr) {
+                return db.rollback(() => {
+                  console.error('Erreur mise à jour candidature:', updateErr);
+                  res.status(500).json({
+                    success: false,
+                    message: "Erreur lors de la mise à jour"
+                  });
+                });
+              }
+
+              // Créer le token d'activation
+              const tokenQuery = `
+                                INSERT INTO user_activations (
+                                    candidature_id, token, email, expires_at
+                                ) VALUES (?, ?, ?, ?)
+                            `;
+
+              db.query(tokenQuery, [id, activationToken, candidature.email, expiresAt], async (tokenErr) => {
+                if (tokenErr) {
+                  return db.rollback(() => {
+                    console.error('Erreur création token:', tokenErr);
+                    res.status(500).json({
+                      success: false,
+                      message: "Erreur lors de la création du token"
+                    });
+                  });
+                }
+
+                db.commit(async (commitErr) => {
+                  if (commitErr) {
+                    console.error('Erreur commit:', commitErr);
+                    return res.status(500).json({
+                      success: false,
+                      message: "Erreur serveur"
+                    });
+                  }
+
+                  // Envoyer l'email d'acceptation avec le contrat
+                  try {
+                    await emailService.sendAcceptanceEmail({
+                      ...candidature,
+                      activationToken,
+                      franchise_demandee: candidature.franchise_nom || `Franchise à ${candidature.ville}`
+                    });
+
+                    console.log(`[EMAIL] Email d'acceptation envoyé à ${candidature.email}`);
+
+                    res.json({
+                      success: true,
+                      message: "Candidature acceptée et contrat envoyé par email",
+                      data: {
+                        candidature_id: id,
+                        activation_token: activationToken,
+                        expires_at: expiresAt
+                      }
+                    });
+
+                  } catch (emailError) {
+                    console.error('Erreur envoi email:', emailError);
+                    res.status(500).json({
+                      success: false,
+                      message: "Candidature acceptée mais erreur d'envoi email"
+                    });
+                  }
+                });
+              });
+            });
+          });
+        }
+      });
+
+    } catch (error) {
+      console.error('Erreur acceptation candidature:', error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur interne du serveur"
+      });
+    }
+  },
+
+  // Refuser une candidature
+  reject: (req, res) => {
+    try {
+      const { id } = req.params;
+      const { notes_internes } = req.body;
+
+      console.log(`[CANDIDATURE] Refus candidature ${id}`);
+
+      const updateQuery = `
+                UPDATE franchise_candidatures 
+                SET statut = 'refusee', notes_internes = ?, updated_at = NOW()
+                WHERE id = ? AND statut = 'en_attente'
+            `;
+
+      db.query(updateQuery, [notes_internes || '', id], (err, result) => {
+        if (err) {
+          console.error('Erreur refus candidature:', err);
+          return res.status(500).json({
+            success: false,
+            message: "Erreur lors du refus"
+          });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Candidature non trouvée ou déjà traitée"
+          });
+        }
+
+        res.json({
+          success: true,
+          message: "Candidature refusée avec succès"
+        });
+      });
+
+    } catch (error) {
+      console.error('Erreur dans reject:', error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur interne du serveur"
+      });
+    }
+  }
 };
+
 
 module.exports = CandidatureController;

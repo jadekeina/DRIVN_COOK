@@ -114,7 +114,7 @@ try {
 // ROUTES FRANCHISE
 try {
   console.log("Chargement des routes franchise...");
-  const franchiseRoutes = require("./routes/franchise");
+  const franchiseRoutes = require("./routes/franchise/index");
 
   if (franchiseRoutes) {
     app.use("/api/franchises", franchiseRoutes);
@@ -201,15 +201,7 @@ try {
   console.error('Erreur routes commande/stock:', error.message);
 }
 
-// ROUTES CONTRACT ACTIVATION
-try {
-  console.log('Chargement des routes d\'activation contrat...');
-  const contractActivationRoutes = require('./routes/franchise/contractActivation');
-  app.use('/api/franchise', contractActivationRoutes);
-  console.log('Routes d\'activation contrat montées sur /api/franchise');
-} catch (error) {
-  console.error('Erreur routes activation contrat:', error.message);
-}
+
 
 
 console.log('Ajout des routes de contrat avec modèle...');
@@ -287,6 +279,7 @@ app.post('/api/contract/accept/:token', (req, res) => {
     // CORRECTION: Utiliser le modèle Contract
     const Contract = require('./models/contract');
 
+
     Contract.getCandidatureByToken(token, async (err, candidature) => {
       if (err) {
         console.error('Erreur récupération candidature:', err);
@@ -361,6 +354,46 @@ app.post('/api/contract/accept/:token', (req, res) => {
       message: "Erreur interne du serveur"
     });
   }
+});
+
+// Webhook Stripe pour mettre à jour le payment_status
+app.post('/api/webhook/stripe', express.raw({type: 'application/json'}), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Gérer l'événement de paiement réussi
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const activationToken = session.metadata.activation_token;
+    const candidateEmail = session.metadata.candidate_email;
+
+    // Mettre à jour le payment_status
+    const updateQuery = `
+            UPDATE users 
+            SET payment_status = 'franchise_payment_completed',
+                franchise_payment_completed_at = NOW(),
+                franchise_payment_method = 'Stripe'
+            WHERE email = ? AND role = 'franchise_owner'
+        `;
+
+    db.execute(updateQuery, [candidateEmail])
+        .then(() => {
+          console.log('Payment status mis à jour pour:', candidateEmail);
+        })
+        .catch(err => {
+          console.error('Erreur mise à jour payment_status:', err);
+        });
+  }
+
+  res.json({received: true});
 });
 
 // Route pour vérifier le succès du paiement
