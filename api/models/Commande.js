@@ -1,4 +1,4 @@
-const db = require("../config/db");
+const { pool } = require('../config/db');
 
 const Commande = {
     // ===== GESTION DES PRODUITS/ARTICLES =====
@@ -19,28 +19,23 @@ const Commande = {
                 est_obligatoire,
                 est_actif,
                 created_at as date_creation,
-                CASE
-                    WHEN est_actif = 1 THEN 'disponible'
-                    ELSE 'indisponible'
-                    END as statut
+                COALESCE(quantite_stock, 0) AS stock_actuel
             FROM produits
             WHERE est_actif = 1
             ORDER BY created_at DESC
         `;
 
-        db.query(query, (err, results) => {
+        pool.query(query, (err, results) => {
             if (err) return callback(err);
 
-            // Ajouter des données simulées pour stock et seuil
-            const produitsAvecStock = results.map(produit => ({
+            const produits = results.map(produit => ({
                 ...produit,
-                stock_actuel: Math.floor(Math.random() * 100) + 10,
                 seuil_alerte: 15,
                 fournisseur: 'Fournisseur Standard',
-                date_creation: produit.date_creation
+                statut: produit.est_actif ? 'disponible' : 'indisponible'
             }));
 
-            callback(null, produitsAvecStock);
+            callback(null, produits);
         });
     },
 
@@ -55,7 +50,7 @@ const Commande = {
             ) VALUES (?, ?, ?, ?, ?, ?, 1)
         `;
 
-        db.query(query, [
+        pool.query(query, [
             produitData.nom,
             produitData.description || '',
             produitData.prix_unitaire,
@@ -87,25 +82,25 @@ const Commande = {
             SELECT
                 id,
                 CONCAT('ART-', LPAD(id, 3, '0')) as id_article,
-                nom, 
+                nom,
                 description,
                 prix_unitaire,
                 unite,
                 categorie,
                 est_obligatoire,
                 est_actif,
-                created_at as date_creation
+                created_at as date_creation,
+                COALESCE(quantite_stock, 0) AS stock_actuel
             FROM produits
             WHERE id = ? AND est_actif = 1
         `;
 
-        db.query(query, [id], (err, results) => {
+        pool.query(query, [id], (err, results) => {
             if (err) return callback(err);
 
             if (results.length > 0) {
                 const produit = {
                     ...results[0],
-                    stock_actuel: Math.floor(Math.random() * 100) + 10,
                     seuil_alerte: 15,
                     fournisseur: 'Fournisseur Standard',
                     statut: 'disponible'
@@ -120,7 +115,7 @@ const Commande = {
     // ===== GESTION DES COMMANDES =====
 
     /**
-     * Récupérer toutes les commandes avec leurs détails pour la page Suivi Commandes
+     * Récupérer toutes les commandes avec leurs détails
      */
     getAllCommandes: (callback) => {
         const query = `
@@ -141,16 +136,12 @@ const Commande = {
             ORDER BY c.created_at DESC
         `;
 
-        db.query(query, (err, commandes) => {
+        pool.query(query, (err, commandes) => {
             if (err) return callback(err);
+            if (commandes.length === 0) return callback(null, []);
 
-            if (commandes.length === 0) {
-                return callback(null, []);
-            }
-
-            // Pour chaque commande, récupérer ses articles
             let commandesCompletes = [];
-            let commandesProcessed = 0;
+            let processed = 0;
 
             commandes.forEach((commande, index) => {
                 const detailQuery = `
@@ -167,7 +158,7 @@ const Commande = {
                     ORDER BY cd.id
                 `;
 
-                db.query(detailQuery, [commande.id], (detailErr, articles) => {
+                pool.query(detailQuery, [commande.id], (detailErr, articles) => {
                     if (detailErr) return callback(detailErr);
 
                     commandesCompletes[index] = {
@@ -182,11 +173,53 @@ const Commande = {
                         notes: commande.notes
                     };
 
-                    commandesProcessed++;
-                    if (commandesProcessed === commandes.length) {
-                        const resultats = commandesCompletes.filter(cmd => cmd !== undefined);
+                    processed++;
+                    if (processed === commandes.length) {
+                        const resultats = commandesCompletes.filter(c => c);
                         callback(null, resultats);
                     }
+                });
+            });
+        });
+    },
+
+    getProduitStock: (produitId, callback) => {
+        const q = `SELECT quantite_stock FROM produits WHERE id = ?`;
+        pool.query(q, [produitId], (err, rows) => {
+            if (err) return callback(err);
+            const qty = rows.length ? parseFloat(rows[0].quantite_stock) : 0;
+            callback(null, qty);
+        });
+    },
+
+    decrementProduitStock: (produitId, quantite, reference, callback) => {
+        pool.getConnection((connErr, conn) => {
+            if (connErr) return callback(connErr);
+
+            conn.beginTransaction(txErr => {
+                if (txErr) { conn.release(); return callback(txErr); }
+
+                const selectQ = `SELECT quantite_stock FROM produits WHERE id = ? FOR UPDATE`;
+                conn.query(selectQ, [produitId], (selErr, rows) => {
+                    if (selErr) return conn.rollback(() => { conn.release(); callback(selErr); });
+                    if (!rows.length) return conn.rollback(() => { conn.release(); callback(new Error('Produit introuvable')); });
+
+                    const current = parseFloat(rows[0].quantite_stock);
+                    const qte = parseFloat(quantite);
+                    if (current < qte) {
+                        return conn.rollback(() => { conn.release(); callback(new Error('Stock insuffisant')); });
+                    }
+
+                    const updateQ = `UPDATE produits SET quantite_stock = quantite_stock - ? WHERE id = ?`;
+                    conn.query(updateQ, [qte, produitId], (updErr) => {
+                        if (updErr) return conn.rollback(() => { conn.release(); callback(updErr); });
+
+                        conn.commit(commitErr => {
+                            if (commitErr) return conn.rollback(() => { conn.release(); callback(commitErr); });
+                            conn.release();
+                            callback(null, true);
+                        });
+                    });
                 });
             });
         });
@@ -196,86 +229,85 @@ const Commande = {
      * Créer une nouvelle commande avec ses articles
      */
     createCommande: (commandeData, callback) => {
-        db.beginTransaction((transactionErr) => {
-            if (transactionErr) return callback(transactionErr);
+        pool.getConnection((connErr, conn) => {
+            if (connErr) return callback(connErr);
 
-            const insertCommandeQuery = `
-                INSERT INTO commandes (
-                    franchisee_id,
-                    entrepot_id,
-                    date_commande,
-                    total_ttc,
-                    statut,
-                    notes
-                ) VALUES (?, 1, NOW(), ?, 'en_attente', ?)
-            `;
+            conn.beginTransaction((transactionErr) => {
+                if (transactionErr) { conn.release(); return callback(transactionErr); }
 
-            db.query(insertCommandeQuery, [
-                commandeData.franchise_id,
-                commandeData.montant_total,
-                commandeData.notes || ''
-            ], (cmdErr, cmdResult) => {
-                if (cmdErr) {
-                    return db.rollback(() => callback(cmdErr));
-                }
+                const insertCommandeQuery = `
+                    INSERT INTO commandes (
+                        franchisee_id,
+                        entrepot_id,
+                        date_commande,
+                        total_ttc,
+                        statut,
+                        notes
+                    ) VALUES (?, 1, CURDATE(), ?, 'en_attente', ?)
+                `;
 
-                const commandeId = cmdResult.insertId;
+                conn.query(insertCommandeQuery, [
+                    commandeData.franchise_id,
+                    commandeData.montant_total,
+                    commandeData.notes || ''
+                ], (cmdErr, cmdResult) => {
+                    if (cmdErr) return conn.rollback(() => { conn.release(); callback(cmdErr); });
 
-                if (!commandeData.articles || commandeData.articles.length === 0) {
-                    return db.rollback(() => callback(new Error('Aucun article dans la commande')));
-                }
-
-                let articlesInserted = 0;
-                let hasError = false;
-
-                commandeData.articles.forEach(article => {
-                    if (hasError) return;
-
-                    const insertDetailQuery = `
-                        INSERT INTO commandes_detail (
-                            commande_id, produit_id, quantite, prix_unitaire, total
-                        ) VALUES (?, ?, ?, ?, ?)
-                    `;
-
-                    const produitId = parseInt(article.id_article.replace('ART-', ''));
-
-                    if (isNaN(produitId)) {
-                        hasError = true;
-                        return db.rollback(() => callback(new Error(`ID article invalide: ${article.id_article}`)));
+                    const commandeId = cmdResult.insertId;
+                    if (!Array.isArray(commandeData.articles) || commandeData.articles.length === 0) {
+                        return conn.rollback(() => { conn.release(); callback(new Error('Aucun article dans la commande')); });
                     }
 
-                    db.query(insertDetailQuery, [
-                        commandeId,
-                        produitId,
-                        article.quantite,
-                        article.prix_unitaire,
-                        article.sous_total
-                    ], (detailErr) => {
-                        if (detailErr) {
-                            hasError = true;
-                            return db.rollback(() => callback(detailErr));
+                    let inserted = 0;
+                    let failed = false;
+
+                    for (const article of commandeData.articles) {
+                        if (failed) break;
+
+                        const produitId = article.produit_id
+                            ? parseInt(article.produit_id, 10)
+                            : parseInt(String(article.id_article || '').replace('ART-', ''), 10);
+
+                        if (Number.isNaN(produitId)) {
+                            failed = true;
+                            return conn.rollback(() => { conn.release(); callback(new Error(`ID article invalide: ${article.id_article || article.produit_id}`)); });
                         }
 
-                        articlesInserted++;
-                        if (articlesInserted === commandeData.articles.length) {
-                            db.commit((commitErr) => {
-                                if (commitErr) {
-                                    return db.rollback(() => callback(commitErr));
-                                }
+                        const qte = parseFloat(article.quantite);
+                        const pu  = parseFloat(article.prix_unitaire);
+                        const total = parseFloat(article.sous_total ?? (qte * pu));
 
-                                const nouvelleCommande = {
-                                    id: `CMD-${String(commandeId).padStart(3, '0')}`,
-                                    franchise_id: commandeData.franchise_id,
-                                    montant_total: commandeData.montant_total,
-                                    articles: commandeData.articles,
-                                    notes: commandeData.notes,
-                                    statut: 'en_attente'
-                                };
+                        const insertDetailQuery = `
+                            INSERT INTO commandes_detail (commande_id, produit_id, quantite, prix_unitaire, total)
+                            VALUES (?, ?, ?, ?, ?)
+                        `;
 
-                                callback(null, nouvelleCommande);
-                            });
-                        }
-                    });
+                        conn.query(insertDetailQuery, [commandeId, produitId, qte, pu, total], (detailErr) => {
+                            if (detailErr) {
+                                failed = true;
+                                return conn.rollback(() => { conn.release(); callback(detailErr); });
+                            }
+                            inserted++;
+                            if (inserted === commandeData.articles.length) {
+                                conn.commit((commitErr) => {
+                                    if (commitErr) return conn.rollback(() => { conn.release(); callback(commitErr); });
+                                    conn.release();
+
+                                    const nouvelleCommande = {
+                                        id: `CMD-${String(commandeId).padStart(3, '0')}`,
+                                        commande_id_num: commandeId,
+                                        franchise_id: commandeData.franchise_id,
+                                        montant_total: commandeData.montant_total,
+                                        articles: commandeData.articles,
+                                        notes: commandeData.notes,
+                                        statut: 'en_attente'
+                                    };
+
+                                    callback(null, nouvelleCommande);
+                                });
+                            }
+                        });
+                    }
                 });
             });
         });
@@ -286,19 +318,11 @@ const Commande = {
      */
     updateStatutCommande: (commandeId, nouveauStatut, callback) => {
         const statutBdd = Commande.mapStatutToBdd(nouveauStatut);
+        const query = `UPDATE commandes SET statut = ?, updated_at = NOW() WHERE id = ?`;
 
-        const query = `
-            UPDATE commandes
-            SET statut = ?, updated_at = NOW()
-            WHERE id = ?
-        `;
-
-        db.query(query, [statutBdd, commandeId], (err, result) => {
+        pool.query(query, [statutBdd, commandeId], (err, result) => {
             if (err) return callback(err);
-
-            if (result.affectedRows === 0) {
-                return callback(new Error('Commande non trouvée'));
-            }
+            if (result.affectedRows === 0) return callback(new Error('Commande non trouvée'));
 
             callback(null, {
                 commandeId,
@@ -310,29 +334,20 @@ const Commande = {
     },
 
     /**
-     * Récupérer tous les franchisés pour les listes déroulantes
+     * Récupérer tous les franchisés
      */
     getAllFranchises: (callback) => {
         const query = `
-            SELECT
-                id,
-                CONCAT(first_name, ' ', last_name) as nom,
-                email,
-                zone_attribution
+            SELECT id, CONCAT(first_name, ' ', last_name) as nom, email, zone_attribution
             FROM users
-            WHERE role = 'franchise_owner'
-              AND is_verified = 1
+            WHERE role = 'franchise_owner' AND is_verified = 1
             ORDER BY last_name, first_name
         `;
-
-        db.query(query, callback);
+        pool.query(query, callback);
     },
 
     // ===== MÉTHODES UTILITAIRES =====
 
-    /**
-     * Mapper les statuts de la BDD vers ceux attendus par React
-     */
     mapStatutToReact: (statutBdd) => {
         const mapping = {
             'en_attente': 'en_attente',
@@ -344,9 +359,6 @@ const Commande = {
         return mapping[statutBdd] || 'en_attente';
     },
 
-    /**
-     * Mapper les statuts React vers ceux de la BDD
-     */
     mapStatutToBdd: (statutReact) => {
         const mapping = {
             'en_attente': 'en_attente',
@@ -359,21 +371,16 @@ const Commande = {
         return mapping[statutReact] || 'en_attente';
     },
 
-    // Ajoutez ces méthodes à votre fichier models/Commande.js
-
-    /**
-     * Mettre à jour un produit existant
-     */
     updateProduit: (id, produitData, callback) => {
         const query = `
-        UPDATE produits 
-        SET nom = ?, description = ?, prix_unitaire = ?, 
-            unite = ?, categorie = ?, est_obligatoire = ?, 
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND est_actif = 1
-    `;
+            UPDATE produits
+            SET nom = ?, description = ?, prix_unitaire = ?,
+                unite = ?, categorie = ?, est_obligatoire = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND est_actif = 1
+        `;
 
-        db.query(query, [
+        pool.query(query, [
             produitData.nom,
             produitData.description || '',
             produitData.prix_unitaire,
@@ -383,135 +390,132 @@ const Commande = {
             id
         ], (err, result) => {
             if (err) return callback(err);
+            if (result.affectedRows === 0) return callback(new Error('Produit non trouvé'));
 
-            if (result.affectedRows === 0) {
-                return callback(new Error('Produit non trouvé'));
-            }
-
-            // Retourner le produit mis à jour
             Commande.getProduitById(id, callback);
         });
     },
 
-    /**
-     * Supprimer un produit (soft delete)
-     */
     deleteProduit: (id, callback) => {
         const query = `
-        UPDATE produits 
-        SET est_actif = 0, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND est_actif = 1
-    `;
+            UPDATE produits
+            SET est_actif = 0, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND est_actif = 1
+        `;
 
-        db.query(query, [id], (err, result) => {
+        pool.query(query, [id], (err, result) => {
             if (err) return callback(err);
+            if (result.affectedRows === 0) return callback(new Error('Produit non trouvé'));
 
-            if (result.affectedRows === 0) {
-                return callback(new Error('Produit non trouvé'));
-            }
-
-            callback(null, {
-                id: id,
-                message: 'Produit désactivé avec succès',
-                affectedRows: result.affectedRows
-            });
+            callback(null, { id, message: 'Produit désactivé avec succès', affectedRows: result.affectedRows });
         });
     },
 
-    /**
-     * Ajouter un mouvement de stock
-     * Note: Cette méthode nécessite une table mouvements_stock
-     */
     addMouvementStock: (mouvementData, callback) => {
-        // Pour l'instant, on simule car la table n'existe pas encore
-        // Vous pouvez créer la table avec cette structure :
-        /*
-        CREATE TABLE mouvements_stock (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            produit_id INT NOT NULL,
-            type ENUM('entree', 'sortie') NOT NULL,
-            quantite INT NOT NULL,
-            motif VARCHAR(255) NOT NULL,
-            utilisateur_id INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (produit_id) REFERENCES produits(id)
-        );
-        */
-
         const nouveauMouvement = {
-            id: Date.now(), // ID temporaire
+            id: Date.now(),
             produit_id: mouvementData.article_id,
             type: mouvementData.type,
             quantite: mouvementData.quantite,
             motif: mouvementData.motif,
             date: new Date().toISOString(),
-            utilisateur: 'Admin' // À remplacer par l'utilisateur connecté
+            utilisateur: 'Admin'
         };
-
-        // Simulation de l'insertion
         console.log('[STOCK] Simulation ajout mouvement:', nouveauMouvement);
-
         callback(null, nouveauMouvement);
     },
 
-    /**
-     * Récupérer l'historique des mouvements
-     */
     getMouvementsStock: (options = {}, callback) => {
         const { limit = 50, offset = 0, produit_id } = options;
-
-        // Données de test en attendant la vraie table
         const mouvementsTest = [
-            {
-                id: 1,
-                produit_id: 1,
-                article_nom: "Pain de mie complet",
-                type: "entree",
-                quantite: 50,
-                motif: "Livraison fournisseur",
-                date: new Date(Date.now() - 86400000).toISOString(), // Hier
-                utilisateur: "Admin"
-            },
-            {
-                id: 2,
-                produit_id: 2,
-                article_nom: "Farine T65",
-                type: "sortie",
-                quantite: 20,
-                motif: "Commande Franchise Paris",
-                date: new Date(Date.now() - 172800000).toISOString(), // Avant-hier
-                utilisateur: "Admin"
-            },
-            {
-                id: 3,
-                produit_id: 1,
-                article_nom: "Pain de mie complet",
-                type: "sortie",
-                quantite: 5,
-                motif: "Vente directe",
-                date: new Date(Date.now() - 259200000).toISOString(), // Il y a 3 jours
-                utilisateur: "Caissier"
-            }
+            { id: 1, produit_id: 1, article_nom: "Pain de mie complet", type: "entree", quantite: 50, motif: "Livraison fournisseur", date: new Date(Date.now() - 86400000).toISOString(), utilisateur: "Admin" },
+            { id: 2, produit_id: 2, article_nom: "Farine T65", type: "sortie", quantite: 20, motif: "Commande Franchise Paris", date: new Date(Date.now() - 172800000).toISOString(), utilisateur: "Admin" },
+            { id: 3, produit_id: 1, article_nom: "Pain de mie complet", type: "sortie", quantite: 5, motif: "Vente directe", date: new Date(Date.now() - 259200000).toISOString(), utilisateur: "Caissier" }
         ];
 
-        // Filtrer par produit_id si spécifié
         let mouvementsFiltres = mouvementsTest;
         if (produit_id) {
             mouvementsFiltres = mouvementsTest.filter(m => m.produit_id === parseInt(produit_id));
         }
 
-        // Appliquer limite et offset
         const startIndex = parseInt(offset);
         const endIndex = startIndex + parseInt(limit);
         const mouvementsPagines = mouvementsFiltres.slice(startIndex, endIndex);
 
-        callback(null, {
-            mouvements: mouvementsPagines,
-            total: mouvementsFiltres.length,
-            page: Math.floor(offset / limit) + 1,
-            pages: Math.ceil(mouvementsFiltres.length / limit)
-        });
+        callback(null, { mouvements: mouvementsPagines, total: mouvementsFiltres.length, page: Math.floor(offset / limit) + 1, pages: Math.ceil(mouvementsFiltres.length / limit) });
     },
+
+    /**
+     * Récupérer les commandes d'une franchise spécifique
+     */
+    getCommandesByFranchise: (franchiseId, callback) => {
+        const query = `
+            SELECT 
+                c.id,
+                c.code as code_commande,
+                c.date_commande,
+                c.statut,
+                c.montant_total,
+                c.franchise_id,
+                c.notes,
+                c.bon_commande_url,
+                c.created_at,
+                c.updated_at,
+                GROUP_CONCAT(
+                    JSON_OBJECT(
+                        'id_article', cd.id_article,
+                        'nom_article', cd.nom_article,
+                        'quantite', cd.quantite,
+                        'prix_unitaire', cd.prix_unitaire,
+                        'sous_total', cd.sous_total
+                    )
+                ) as articles_json
+            FROM commandes c
+            LEFT JOIN commandes_detail cd ON c.id = cd.commande_id
+            WHERE c.franchise_id = ?
+            GROUP BY c.id
+            ORDER BY c.date_commande DESC
+        `;
+
+        pool.query(query, [franchiseId], (err, results) => {
+            if (err) {
+                console.error('[COMMANDE MODEL] Erreur getCommandesByFranchise:', err);
+                return callback(err);
+            }
+
+            // Formatter les résultats
+            const commandes = results.map(commande => {
+                let articles = [];
+                
+                if (commande.articles_json) {
+                    try {
+                        // Parse les articles JSON
+                        const articlesStr = `[${commande.articles_json}]`;
+                        articles = JSON.parse(articlesStr);
+                    } catch (parseErr) {
+                        console.error('[COMMANDE MODEL] Erreur parse articles:', parseErr);
+                        articles = [];
+                    }
+                }
+
+                return {
+                    id: commande.id,
+                    code_commande: commande.code_commande,
+                    date_commande: commande.date_commande,
+                    statut: commande.statut,
+                    montant_total: parseFloat(commande.montant_total),
+                    franchise_id: commande.franchise_id,
+                    notes: commande.notes,
+                    bon_commande_url: commande.bon_commande_url,
+                    articles: articles,
+                    created_at: commande.created_at,
+                    updated_at: commande.updated_at
+                };
+            });
+
+            callback(null, commandes);
+        });
+    }
 };
 
 module.exports = Commande;

@@ -302,6 +302,47 @@ const emailService = {
     return emailService.sendEmail(email, subject, text, html);
   },
 
+  // Ajoutez ces méthodes à la fin de votre emailService dans email.Service.js :
+
+// Méthode de test simple
+  sendTestEmail: async (destinataire) => {
+    try {
+      console.log('[EMAIL TEST] Envoi email de test vers:', destinataire);
+      const transporter = createTransport();
+      const result = await transporter.sendMail({
+        from: process.env.MAIL_USER,
+        to: destinataire,
+        subject: 'Test Driv\'n Cook',
+        html: '<h1>Test email Driv\'n Cook</h1><p>Si vous recevez cet email, la configuration fonctionne !</p>'
+      });
+
+      console.log('[EMAIL TEST] Test email envoyé:', result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('[EMAIL TEST] Erreur test email:', error);
+      throw error;
+    }
+  },
+
+// Test de configuration amélioré
+  testConnection: async () => {
+    try {
+      console.log('[EMAIL] Test de connexion...');
+      console.log('[EMAIL] MAIL_USER:', process.env.MAIL_USER ? 'Configuré' : 'NON CONFIGURÉ');
+      console.log('[EMAIL] MAIL_PASS:', process.env.MAIL_PASS ? 'Configuré' : 'NON CONFIGURÉ');
+
+      const transporter = createTransport();
+      await transporter.verify();
+      console.log("[EMAIL] ✅ Connexion email OK");
+      return true;
+    } catch (error) {
+      console.error("[EMAIL] ❌ Erreur connexion email:");
+      console.error("Message:", error.message);
+      console.error("Code:", error.code);
+      return false;
+    }
+  },
+
   // Test de connexion email
   testConnection: async () => {
     try {
@@ -315,5 +356,7 @@ const emailService = {
     }
   }
 };
+
+
 
 module.exports = emailService;

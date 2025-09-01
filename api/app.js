@@ -111,6 +111,8 @@ try {
   console.error("Erreur routes d'authentification:", error.message);
 }
 
+
+
 // ROUTES FRANCHISE
 try {
   console.log("Chargement des routes franchise...");
@@ -187,6 +189,7 @@ try {
   console.error('Erreur routes droits d\'entrée:', error.message);
 }
 
+
 // ROUTES COMMANDES ET STOCK
 try {
   console.log('Chargement des routes commande et stock...');
@@ -218,7 +221,6 @@ app.get('/api/contract/view/:token', (req, res) => {
         message: "Token manquant"
       });
     }
-
 
     const Contract = require('./models/contract');
 
@@ -451,6 +453,60 @@ app.get('/api/contract/payment-success/:token', (req, res) => {
     });
   }
 });
+
+app.post('/api/webhook/stripe-commandes', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Webhook commandes signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+
+    if (session.metadata && session.metadata.type === 'commande') {
+      const commandeIdNum = parseInt(session.metadata.commande_id_num);
+      const commandeRef = session.metadata.commande_id_pretty || `CMD-${commandeIdNum}`;
+
+      try {
+        const db = require('./config/db');
+        const Commande = require('./models/Commande');
+
+        await new Promise((resolve, reject) => {
+          Commande.updateStatutCommande(commandeIdNum, 'confirmee', (err) => err ? reject(err) : resolve());
+        });
+
+        const detailQ = `
+          SELECT cd.produit_id, cd.quantite
+          FROM commandes_detail cd
+          WHERE cd.commande_id = ?
+        `;
+        const [rows] = await db.promise().query(detailQ, [commandeIdNum]);
+
+        for (const row of rows) {
+          const produitId = row.produit_id;
+          const qte = parseFloat(row.quantite);
+
+          await new Promise((resolve, reject) => {
+            Commande.decrementProduitStock(produitId, qte, commandeRef, (err) => err ? reject(err) : resolve());
+          });
+        }
+
+        console.log(`[STRIPE CMD] Paiement ok et stock décrémenté pour ${commandeRef}`);
+      } catch (e) {
+        console.error('[STRIPE CMD] Erreur traitement commande:', e);
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
 
 // Route pour créer le mot de passe après paiement
 app.post('/api/contract/create-password/:token', (req, res) => {

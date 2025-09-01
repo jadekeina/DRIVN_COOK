@@ -9,6 +9,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
+// Dans Login.jsx, remplacer la fonction handleSubmit :
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -28,24 +30,55 @@ export default function LoginPage() {
       return;
     }
 
-    // NOUVELLE PARTIE - Connexion à l'API
+    // CORRECTION : Appel direct à l'API au lieu du service
     try {
-      const result = await authService.login(email, password);
+      console.log('[LOGIN] Tentative de connexion...', { email });
 
-      if (result.success) {
-        // Redirection selon le rôle
-        const user = result.data?.user;
-        if (user?.role === "admin") {
-          window.location.href = "/admin"; // Ton interface admin
-        } else if (user?.role === "franchise_owner") {
-          window.location.href = "/franchise-dashboard"; // Interface franchisé
+      const response = await fetch('http://localhost:3002/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const result = await response.json();
+      console.log('[LOGIN] Réponse serveur:', result);
+
+      if (result.success && result.data.token) {
+        // CRITIQUE: Sauvegarder le token correctement
+        localStorage.setItem('token', result.data.token);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+
+        console.log('[LOGIN] Token sauvegardé:', result.data.token.substring(0, 20) + '...');
+
+        // Test immédiat du token
+        const testResponse = await fetch('http://localhost:3002/api/auth/profile', {
+          headers: {
+            'Authorization': `Bearer ${result.data.token}`,
+          },
+        });
+
+        if (testResponse.ok) {
+          console.log('[LOGIN] Token validé, redirection...');
+          // Redirection selon le rôle
+          const user = result.data.user;
+          if (user.role === "admin") {
+            window.location.href = "/admin";
+          } else if (user.role === "franchise_owner") {
+            window.location.href = "/mes-commandes"; // Redirection vers MesCommandes
+          } else {
+            window.location.href = "/dashboard";
+          }
         } else {
-          window.location.href = "/dashboard"; // Interface client
+          console.error('[LOGIN] Token invalide après login');
+          setErrors({ general: 'Erreur de validation du token' });
         }
       } else {
         setErrors({ general: result.message || "Erreur de connexion" });
       }
     } catch (error) {
+      console.error('[LOGIN] Erreur réseau:', error);
       setErrors({ general: "Erreur de connexion au serveur" });
     } finally {
       setIsLoading(false);
@@ -90,6 +123,20 @@ export default function LoginPage() {
 
           {/* Login form */}
           <div className="space-y-6">
+            {/* Bouton de test */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('test@drivncook.fr');
+                  setPassword('test123');
+                }}
+                className="px-4 py-2 text-sm text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                Remplir avec compte de test
+              </button>
+            </div>
+            
             {/* Email field */}
             <div className="space-y-2">
               <label

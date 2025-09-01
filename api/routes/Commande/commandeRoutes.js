@@ -13,10 +13,7 @@ router.use((req, res, next) => {
     next();
 });
 
-/**
- * GET /api/commandes/test
- * Route de test pour vérifier que l'API fonctionne
- */
+
 router.get('/test', (req, res) => {
     res.json({
         success: true,
@@ -24,51 +21,38 @@ router.get('/test', (req, res) => {
         timestamp: new Date().toISOString(),
         endpoints: [
             'GET /api/commandes/list - Liste de toutes les commandes',
+            'GET /api/commandes/my-commandes - Mes commandes (franchise)',
             'POST /api/commandes - Créer une nouvelle commande',
             'PUT /api/commandes/:id/statut - Mettre à jour le statut d\'une commande',
+            'GET /api/commandes/:id/bon-commande-download - Télécharger bon PDF',
             'GET /api/commandes/franchises - Liste des franchises'
         ]
     });
 });
 
-/**
- * GET /api/commandes/list
- * Récupérer toutes les commandes pour la page Suivi Commandes
- */
-router.get('/list', authenticateToken, commandeController.getAllCommandes);
 
-/**
- * POST /api/commandes
- * Créer une nouvelle commande
- * Body: {
- *   franchise_id: number (requis),
- *   articles: Array<{
- *     id_article: string (requis, format: ART-001),
- *     nom_article: string (requis),
- *     quantite: number (requis),
- *     prix_unitaire: number (requis),
- *     sous_total: number (calculé automatiquement si absent)
- *   }> (requis),
- *   notes: string
- * }
- */
+router.get('/list', authenticateToken, commandeController.getAllCommandes);
+router.get('/my-commandes', authenticateToken, commandeController.getMyCommandes);
+
+
 router.post('/', authenticateToken, commandeController.createCommande);
 
-/**
- * PUT /api/commandes/:id/statut
- * Mettre à jour le statut d'une commande
- * Params: id - ID de la commande (format: CMD-001 ou 1)
- * Body: {
- *   statut: 'en_attente' | 'confirmee' | 'preparee' | 'en_livraison' | 'livree' | 'annulee'
- * }
- */
 router.put('/:id/statut', authenticateToken, commandeController.updateStatutCommande);
 
-/**
- * GET /api/commandes/franchises
- * Récupérer la liste des franchises pour les formulaires de création de commande
- */
+
 router.get('/franchises', authenticateToken, commandeController.getFranchises);
+
+router.post('/create-payment-session', authenticateToken, commandeController.createPaymentSession);
+router.get('/:id/bon-commande-download', authenticateToken, commandeController.getBonCommandeDownload);
+
+
+router.get('/:id/bon-commande', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    return res.json({
+        success: true,
+        pdf_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/static/bon-commande-${encodeURIComponent(id)}.pdf`
+    });
+});
 
 // Middleware de gestion d'erreurs spécifique aux routes commandes
 router.use((error, req, res, next) => {

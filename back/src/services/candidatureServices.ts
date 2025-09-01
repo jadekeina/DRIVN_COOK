@@ -95,20 +95,27 @@ export const candidatureService = {
   ): Promise<void> {
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(
-        `${API_BASE_URL}/candidatures/${id}/status`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token && { Authorization: `Bearer ${token}` }),
-          },
-          body: JSON.stringify({
-            statut,
-            notes_internes,
-          }),
+      
+      // Déterminer quelle route utiliser selon le statut
+      let endpoint: string;
+      if (statut === 'acceptee') {
+        endpoint = `${API_BASE_URL}/candidatures/${id}/accept`;
+      } else if (statut === 'refusee') {
+        endpoint = `${API_BASE_URL}/candidatures/${id}/reject`;
+      } else {
+        throw new Error(`Statut non supporté: ${statut}`);
+      }
+
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
         },
-      );
+        body: JSON.stringify({
+          notes_internes,
+        }),
+      });
 
       const data = await response.json();
 

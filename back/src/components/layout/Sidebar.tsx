@@ -11,16 +11,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const [commandesOpen, setCommandesOpen] = useState(false);
 
     const menuItems = [
-        {
-            path: "/dashboard",
-            name: "Dashboard",
-            icon: (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
-                    <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
-                </svg>
-            ),
-        },
+
         {
             path: "/candidatures",
             name: "Candidatures",
@@ -33,7 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     />
                 </svg>
             ),
-            badge: 3, // 3 candidatures en attente
+
         },
         {
             path: "/franchises",
@@ -71,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1V8a1 1 0 00-1-1h-3z" />
                 </svg>
             ),
-            badge: 1, // 1 camion en panne
+
         },
     ];
 
@@ -205,26 +196,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </div>
                     </nav>
 
-                    {/* Bottom section */}
-                    <div className="absolute bottom-4 left-3 right-3">
-                        <div
-                            className="p-4 rounded-lg border"
-                            style={{ backgroundColor: "#B9E6FF20", borderColor: "#B9E6FF" }}
-                        >
-                            <h3 className="text-sm font-medium text-gray-900 mb-1">
-                                Aide & Support
-                            </h3>
-                            <p className="text-xs text-gray-600 mb-3">
-                                Besoin d'aide ? Consultez notre documentation
-                            </p>
-                            <button
-                                className="w-full px-3 py-2 text-xs font-medium text-white rounded-md transition-colors"
-                                style={{ backgroundColor: "#5C95FF" }}
-                            >
-                                Voir la doc
-                            </button>
-                        </div>
-                    </div>
+
                 </div>
             </aside>
         </>

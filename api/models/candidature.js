@@ -15,7 +15,8 @@ const Candidature = {
       commentaire_resto,
       ancien_franchise,
       commentaire_franchise,
-      motivation,
+      siret,
+        vat,
       cv_filename,
       lettre_filename,
       carte_filename,
@@ -27,9 +28,9 @@ const Candidature = {
             INSERT INTO franchise_candidatures (
                 prenom, nom, email, telephone, ville, zone,
                 experience_resto, commentaire_resto, ancien_franchise, commentaire_franchise,
-                motivation, cv_filename, lettre_filename, carte_filename,
+                siret,vat, cv_filename, lettre_filename, carte_filename,
                 accept_terms, read_contract, statut
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_attente')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, 'en_attente')
         `;
 
     db.query(
@@ -45,7 +46,8 @@ const Candidature = {
         commentaire_resto,
         ancien_franchise,
         commentaire_franchise,
-        motivation,
+        siret,
+        vat,
         cv_filename,
         lettre_filename,
         carte_filename,
